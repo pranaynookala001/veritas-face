@@ -42,6 +42,10 @@ The browser never receives an authenticity claim without its supporting evidence
 
 See [TODO.md](TODO.md) for the ordered implementation backlog. The first milestone establishes shared contracts and automated quality gates; later milestones add actual upload, inference, and deployment behavior.
 
+## Current local workflow
+
+The initial web experience lets a person select one JPEG, PNG, or WebP portrait up to 10 MiB and reports client-side eligibility feedback accessibly. This is a convenience check only: the API will independently validate uploaded content before it is retained or analyzed, and no authenticity verdict is made in the browser.
+
 ## Local prerequisites
 
 - Node.js 20+

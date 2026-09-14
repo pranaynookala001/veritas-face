@@ -20,7 +20,15 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+      - name: Install JavaScript dependencies
+        run: npm ci
       - name: Validate JavaScript manifests
         run: npm run check:manifest
       - name: Run API contract tests
         run: npm run test:api
+      - name: Run web validation tests
+        run: npm run test:web
+      - name: Lint web application
+        run: npm run lint:web
+      - name: Build web application
+        run: npm run build:web

@@ -3,8 +3,15 @@
   "private": true,
   "version": "0.1.0",
   "workspaces": ["apps/*"],
+  "devDependencies": {
+    "next": "16.0.0"
+  },
   "scripts": {
     "check:manifest": "node --eval \"JSON.parse(require('node:fs').readFileSync('package.json', 'utf8')); JSON.parse(require('node:fs').readFileSync('apps/web/package.json', 'utf8')); console.log('package manifests valid')\"",
-    "test:api": "python3 -m unittest discover -s services/api/tests"
+    "test:api": "python3 -m unittest discover -s services/api/tests",
+    "test:web": "npm run test --workspace=@veritas-face/web",
+    "lint:web": "npm run lint --workspace=@veritas-face/web",
+    "build:web": "npm run build --workspace=@veritas-face/web",
+    "check": "npm run check:manifest && npm run test:api && npm run test:web && npm run lint:web && npm run build:web"
   }
 }

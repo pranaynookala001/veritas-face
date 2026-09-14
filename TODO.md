@@ -8,7 +8,7 @@
 
 ## Milestone 1 — local upload-to-report vertical slice
 
-- [ ] Initialize the Next.js application and implement the accessible upload form with client-side file validation.
+- [x] Initialize the Next.js application and implement the accessible upload form with client-side file validation. Verified with `npm run check`.
 - [ ] Add FastAPI health endpoint, request schemas, validated upload intake, and structured error responses.
 - [ ] Add temporary job/artifact storage with retention cleanup and a job-status state machine.
 - [ ] Implement face detection, primary-face selection, face-quality gates, and deterministic test fixtures.
