@@ -1,0 +1,16 @@
+:root { color-scheme: dark; }
+* { box-sizing: border-box; }
+body { margin: 0; background: #0a0d12; color: #eef2f8; font-family: Arial, Helvetica, sans-serif; }
+main { min-height: 100vh; max-width: 1100px; margin: auto; padding: 6rem 2rem 3rem; }
+.hero { max-width: 760px; }
+.eyebrow { color: #72e1bf; font-size: .75rem; font-weight: 700; letter-spacing: .16em; }
+h1 { font-size: clamp(3rem, 8vw, 6.5rem); letter-spacing: -.075em; line-height: .9; margin: 1rem 0 1.5rem; }
+.lede { color: #abb6c7; font-size: 1.15rem; line-height: 1.6; max-width: 580px; }
+button { border: 1px solid #72e1bf; border-radius: 999px; background: #72e1bf; color: #0a0d12; cursor: not-allowed; font: inherit; font-weight: 700; margin-top: 1rem; padding: .85rem 1.2rem; }
+button span { color: #315d50; font-size: .8rem; margin-left: .4rem; }
+.evidence { border-top: 1px solid #29303b; margin-top: 6rem; padding-top: 2rem; }
+h2 { font-size: 1.2rem; }
+ol { display: grid; gap: .75rem; list-style: none; margin: 1.5rem 0; padding: 0; }
+li { align-items: center; background: #121821; border: 1px solid #29303b; border-radius: .5rem; display: flex; gap: 1rem; padding: 1rem; }
+li span { color: #72e1bf; font: 700 .75rem ui-monospace, monospace; }
+aside { color: #8994a5; font-size: .9rem; margin-top: 3rem; max-width: 650px; }

@@ -1,0 +1,13 @@
+[project]
+name = "veritas-face-api"
+version = "0.1.0"
+description = "Evidence and orchestration service for Veritas Face"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.115,<1.0",
+  "uvicorn[standard]>=0.32,<1.0",
+  "pillow>=11.0,<12.0"
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,0 +1,29 @@
+# JavaScript
+node_modules/
+.next/
+out/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+
+# C++
+build/
+cmake-build-*/
+
+# Local runtime data and secrets
+.env
+.env.local
+uploads/
+artifacts/
+data/
+models/*.onnx
+models/*.pt
+*.pem
+*.key
+
+# OS/editor
+.DS_Store
+.vscode/

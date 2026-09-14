@@ -1,0 +1,10 @@
+{
+  "name": "veritas-face",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": ["apps/*"],
+  "scripts": {
+    "check:manifest": "node --eval \"JSON.parse(require('node:fs').readFileSync('package.json', 'utf8')); JSON.parse(require('node:fs').readFileSync('apps/web/package.json', 'utf8')); console.log('package manifests valid')\"",
+    "test:api": "python3 -m unittest discover -s services/api/tests"
+  }
+}

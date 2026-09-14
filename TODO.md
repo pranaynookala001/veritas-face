@@ -1,0 +1,38 @@
+# Veritas Face implementation backlog
+
+## Milestone 0 — project foundation
+
+- [x] Define public product contract, architecture, safety boundary, and autonomous-run rules. Verified with root quality gate.
+- [x] Add shared API-domain primitives and their unit tests. Verified with `python3 -m unittest discover -s services/api/tests`.
+- [x] Add application and C++ service scaffolds plus CI configuration. Verified with root quality gate.
+
+## Milestone 1 — local upload-to-report vertical slice
+
+- [ ] Initialize the Next.js application and implement the accessible upload form with client-side file validation.
+- [ ] Add FastAPI health endpoint, request schemas, validated upload intake, and structured error responses.
+- [ ] Add temporary job/artifact storage with retention cleanup and a job-status state machine.
+- [ ] Implement face detection, primary-face selection, face-quality gates, and deterministic test fixtures.
+- [ ] Render a completed mock evidence report end-to-end from uploaded image metadata and quality findings.
+
+## Milestone 2 — forensic and inference evidence
+
+- [ ] Integrate C2PA/Content Credentials verification and EXIF/XMP extraction behind a normalized provenance adapter.
+- [ ] Define the ONNX inference HTTP contract and implement C++ service health/model-info endpoints.
+- [ ] Add C++ image preprocessing and CPU ONNX inference with Python/C++ parity tests.
+- [ ] Add baseline-detector adapter, score validation, latency capture, and model-version reporting.
+- [ ] Implement calibration, detector-disagreement policy, and explainable final-verdict generation.
+
+## Milestone 3 — training and evaluation
+
+- [ ] Curate licensed real and fully synthetic portrait dataset manifests with generator-family-aware train/validation/test splits.
+- [ ] Add reproducible free-Kaggle fine-tuning notebook for a pretrained lightweight backbone.
+- [ ] Export the selected model to ONNX with a model card, license, checksums, and reproducible threshold configuration.
+- [ ] Build benchmark runner for held-out sources and transformations: JPEG, resize, crop, filters, profile pose, blur, and occlusion.
+- [ ] Publish metrics, calibration plots, error analysis, model limitations, and latency comparison against the baseline.
+
+## Milestone 4 — hardening and delivery
+
+- [ ] Add Docker Compose for web, API/worker, inference, Redis, Postgres, and temporary object storage.
+- [ ] Add rate/size limits, security headers, structured logs, health/readiness checks, and end-to-end tests.
+- [ ] Deploy the public CPU demo within free-tier limits; document cold-start and quota behavior.
+- [ ] Complete the portfolio README, architecture diagram, setup guide, demo screenshots/video, and pull request to `main`.
