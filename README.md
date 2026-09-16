@@ -44,7 +44,7 @@ See [TODO.md](TODO.md) for the ordered implementation backlog. The first milesto
 
 ## Current local workflow
 
-The initial web experience lets a person select one JPEG, PNG, or WebP portrait up to 10 MiB and reports client-side eligibility feedback accessibly. The API now independently validates the multipart `portrait` content at `POST /v1/jobs` and returns a temporary queued-job receipt. It accepts only non-empty, valid JPEG, PNG, or WebP data no larger than 10 MiB and returns documented structured errors without echoing filenames or bytes. The browser is not wired to submit the file yet, and no authenticity verdict is made in the browser or at intake. See [the API contract](docs/api-contract.md) for the endpoint schema and error envelope.
+The initial web experience lets a person select one JPEG, PNG, or WebP portrait up to 10 MiB and reports client-side eligibility feedback accessibly. The API independently validates multipart `portrait` content at `POST /v1/jobs`, stores the accepted bytes privately for up to 24 hours, and returns a temporary queued-job receipt. `GET /v1/jobs/{job_id}` returns only non-sensitive lifecycle state; cleanup removes expired artifacts while retaining an `expired` tombstone. The API accepts only non-empty, valid JPEG, PNG, or WebP data no larger than 10 MiB and returns documented structured errors without echoing filenames or bytes. The browser is not wired to submit the file yet, and no authenticity verdict is made in the browser or at intake. See [the API contract](docs/api-contract.md) for the endpoint schema and error envelope.
 
 ## Local prerequisites
 

@@ -2,26 +2,35 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 from typing import Annotated
-from uuid import uuid4
+from uuid import UUID
 
-from fastapi import FastAPI, File, Request, UploadFile
+from fastapi import Depends, FastAPI, File, Request, UploadFile
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .intake import UploadValidationError, validate_upload
-from .schemas import ErrorBody, ErrorResponse, HealthResponse, JobAcceptedResponse, ValidationIssue
+from .schemas import (
+    ErrorBody,
+    ErrorResponse,
+    HealthResponse,
+    JobAcceptedResponse,
+    JobStatusResponse,
+    ValidationIssue,
+)
+from .storage import StoredArtifact, TemporaryJobStore
 
 
 APP_VERSION = "0.1.0"
 JOB_RETENTION = timedelta(hours=24)
+job_store = TemporaryJobStore(JOB_RETENTION)
 
 app = FastAPI(
     title="Veritas Face API",
     version=APP_VERSION,
-    description="Validated, temporary intake for synthetic portrait analysis jobs.",
+    description="Validated, temporary intake and job status for synthetic portrait analysis.",
 )
 
 
@@ -35,6 +44,11 @@ def error_response(
     """Render the single error-envelope shape used by public endpoints."""
     payload = ErrorResponse(error=ErrorBody(code=code, message=message, issues=issues or []))
     return JSONResponse(status_code=status_code, content=payload.model_dump(mode="json"))
+
+
+def get_job_store() -> TemporaryJobStore:
+    """Expose local storage as an overridable dependency for API and worker tests."""
+    return job_store
 
 
 @app.exception_handler(UploadValidationError)
@@ -105,15 +119,39 @@ async def create_job(
         UploadFile,
         File(description="One JPEG, PNG, or WebP portrait, no larger than 10 MiB."),
     ],
+    store: Annotated[TemporaryJobStore, Depends(get_job_store)],
 ) -> JobAcceptedResponse:
     """Validate an upload and issue the temporary job receipt.
 
-    This intake boundary intentionally keeps no original filename or image bytes in
-    the response. Artifact persistence and status retrieval arrive with the job
-    storage milestone.
+    This endpoint intentionally keeps original filenames and image bytes out of the
+    response. Bytes are stored only in a private temporary artifact for the worker.
     """
-    await validate_upload(portrait)
+    validated_upload = await validate_upload(portrait)
+    job = store.create_job(
+        StoredArtifact(content=validated_upload.content, media_type=validated_upload.media_type),
+    )
     return JobAcceptedResponse(
-        job_id=uuid4(),
-        expires_at=datetime.now(timezone.utc) + JOB_RETENTION,
+        job_id=job.job_id,
+        expires_at=job.expires_at,
+    )
+
+
+@app.get(
+    "/v1/jobs/{job_id}",
+    response_model=JobStatusResponse,
+    responses={404: {"model": ErrorResponse}},
+    tags=["jobs"],
+)
+async def get_job(
+    job_id: UUID,
+    store: Annotated[TemporaryJobStore, Depends(get_job_store)],
+) -> JobStatusResponse | JSONResponse:
+    """Return non-sensitive job state after deleting artifacts past retention."""
+    job = store.get_job(job_id)
+    if job is None:
+        return error_response(404, "job_not_found", "No job exists for this identifier.")
+    return JobStatusResponse(
+        job_id=job.job_id,
+        status=job.status.value,
+        expires_at=job.expires_at,
     )

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from io import BytesIO
 import warnings
 
@@ -31,8 +32,16 @@ class UploadValidationError(Exception):
         self.field = field
 
 
-async def validate_upload(portrait: UploadFile) -> str:
-    """Read and validate a supported encoded image without retaining its bytes.
+@dataclass(frozen=True)
+class ValidatedUpload:
+    """Content approved for temporary storage after image validation succeeds."""
+
+    content: bytes
+    media_type: str
+
+
+async def validate_upload(portrait: UploadFile) -> ValidatedUpload:
+    """Read and validate a supported encoded image before temporary storage.
 
     The declared MIME type is checked when supplied, but eligibility is determined
     from the decoded image format so a renamed or spoofed file cannot pass intake.
@@ -64,7 +73,7 @@ async def validate_upload(portrait: UploadFile) -> str:
             "media_type_mismatch",
             "The declared image type does not match the uploaded image content.",
         )
-    return detected_media_type
+    return ValidatedUpload(content=content, media_type=detected_media_type)
 
 
 def _detect_media_type(content: bytes) -> str:

@@ -1,6 +1,8 @@
 import io
+import stat
 import sys
-from datetime import datetime, timezone
+import tempfile
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import unittest
 from uuid import UUID
@@ -10,8 +12,10 @@ from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from app.domain import JobStatus
 from app.intake import MAX_UPLOAD_BYTES
-from app.main import APP_VERSION, app
+from app.main import APP_VERSION, app, get_job_store
+from app.storage import JobExpiredError, JobStateError, StoredArtifact, TemporaryJobStore
 
 
 def image_bytes(image_format: str = "PNG") -> bytes:
@@ -40,7 +44,15 @@ def animated_png_bytes() -> bytes:
 
 class ApiTests(unittest.TestCase):
     def setUp(self) -> None:
+        self.temporary_directory = tempfile.TemporaryDirectory()
+        self.store = TemporaryJobStore(timedelta(hours=24), directory=Path(self.temporary_directory.name))
+        app.dependency_overrides[get_job_store] = lambda: self.store
         self.client = TestClient(app)
+
+    def tearDown(self) -> None:
+        app.dependency_overrides.clear()
+        self.store.close()
+        self.temporary_directory.cleanup()
 
     def assert_error(self, response, status_code: int, code: str) -> dict:
         self.assertEqual(response.status_code, status_code)
@@ -72,6 +84,31 @@ class ApiTests(unittest.TestCase):
         expires_at = datetime.fromisoformat(payload["expires_at"].replace("Z", "+00:00"))
         self.assertGreater(expires_at, datetime.now(timezone.utc))
         self.assertNotIn("private-portrait.png", str(payload))
+
+        job = self.client.get(f"/v1/jobs/{payload['job_id']}")
+        self.assertEqual(job.status_code, 200)
+        self.assertEqual(job.json()["status"], "queued")
+        self.assertNotIn("private-portrait.png", str(job.json()))
+        self.assertNotIn(image_bytes().decode(errors="ignore"), str(job.json()))
+
+    def test_unknown_job_uses_the_error_envelope(self) -> None:
+        response = self.client.get("/v1/jobs/00000000-0000-0000-0000-000000000000")
+
+        self.assert_error(response, 404, "job_not_found")
+
+    def test_expired_job_exposes_only_its_expired_status(self) -> None:
+        job = self.store.create_job(
+            StoredArtifact(content=b"temporary image", media_type="image/png"),
+            now=datetime.now(timezone.utc) - timedelta(days=2),
+        )
+
+        response = self.client.get(f"/v1/jobs/{job.job_id}")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "expired")
+        self.assertNotIn("temporary image", str(response.json()))
+        with self.assertRaises(JobExpiredError):
+            self.store.get_artifact(job.job_id)
 
     def test_valid_image_with_a_generic_mime_type_uses_content_detection(self) -> None:
         response = self.client.post(
@@ -148,6 +185,59 @@ class ApiTests(unittest.TestCase):
         response = self.client.get("/unknown")
 
         self.assert_error(response, 404, "not_found")
+
+
+class TemporaryJobStoreTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temporary_directory = tempfile.TemporaryDirectory()
+        self.store = TemporaryJobStore(timedelta(minutes=5), directory=Path(self.temporary_directory.name))
+        self.created_at = datetime(2026, 9, 15, tzinfo=timezone.utc)
+
+    def tearDown(self) -> None:
+        self.store.close()
+        self.temporary_directory.cleanup()
+
+    def test_state_machine_allows_only_monotonic_worker_transitions(self) -> None:
+        job = self.store.create_job(
+            StoredArtifact(content=b"validated image", media_type="image/png"),
+            now=self.created_at,
+        )
+
+        with self.assertRaises(JobStateError):
+            self.store.transition(job.job_id, JobStatus.COMPLETED, now=self.created_at)
+
+        processing = self.store.transition(job.job_id, JobStatus.PROCESSING, now=self.created_at)
+        completed = self.store.transition(job.job_id, JobStatus.COMPLETED, now=self.created_at)
+
+        self.assertEqual(processing.status, JobStatus.PROCESSING)
+        self.assertEqual(completed.status, JobStatus.COMPLETED)
+        self.assertEqual(self.store.get_artifact(job.job_id, now=self.created_at).content, b"validated image")
+
+        with self.assertRaises(JobStateError):
+            self.store.transition(job.job_id, JobStatus.FAILED, now=self.created_at)
+
+    def test_artifacts_are_private_and_expire_when_a_worker_reads_them(self) -> None:
+        job = self.store.create_job(
+            StoredArtifact(content=b"temporary image", media_type="image/png"),
+            now=self.created_at,
+        )
+
+        self.assertIsNotNone(job.artifact_path)
+        self.assertEqual(stat.S_IMODE(job.artifact_path.stat().st_mode), 0o600)
+        with self.assertRaises(JobExpiredError):
+            self.store.get_artifact(job.job_id, now=job.expires_at)
+        self.assertEqual(self.store.get_job(job.job_id, now=job.expires_at).status, JobStatus.EXPIRED)
+
+    def test_retention_deletes_the_artifact_and_marks_the_job_expired(self) -> None:
+        job = self.store.create_job(
+            StoredArtifact(content=b"temporary image", media_type="image/png"),
+            now=self.created_at,
+        )
+
+        self.assertEqual(self.store.cleanup_expired(now=job.expires_at), 1)
+        self.assertEqual(self.store.get_job(job.job_id, now=job.expires_at).status, JobStatus.EXPIRED)
+        with self.assertRaises(JobExpiredError):
+            self.store.get_artifact(job.job_id, now=job.expires_at)
 
 
 if __name__ == "__main__":

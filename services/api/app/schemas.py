@@ -17,19 +17,25 @@ class HealthResponse(BaseModel):
     version: str
 
 
-class JobAcceptedResponse(BaseModel):
-    """Receipt returned after an image has passed intake validation."""
+class JobStatusResponse(BaseModel):
+    """Public metadata for a temporary asynchronous job."""
 
     model_config = ConfigDict(extra="forbid")
 
     job_id: UUID
-    status: Literal["queued"] = "queued"
+    status: Literal["queued", "processing", "completed", "failed", "expired"]
     expires_at: datetime
 
     @field_serializer("expires_at")
     def serialize_expiry(self, value: datetime) -> str:
         """Keep the public contract in unambiguous UTC RFC 3339 form."""
         return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+class JobAcceptedResponse(JobStatusResponse):
+    """Receipt returned after an image has passed intake validation."""
+
+    status: Literal["queued"] = "queued"
 
 
 class ValidationIssue(BaseModel):
