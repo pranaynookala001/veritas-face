@@ -20,6 +20,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+      - name: Install API dependencies
+        run: python -m pip install -e "services/api[test]"
       - name: Install JavaScript dependencies
         run: npm ci
       - name: Validate JavaScript manifests

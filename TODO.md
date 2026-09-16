@@ -9,7 +9,7 @@
 ## Milestone 1 — local upload-to-report vertical slice
 
 - [x] Initialize the Next.js application and implement the accessible upload form with client-side file validation. Verified with `npm run check`.
-- [ ] Add FastAPI health endpoint, request schemas, validated upload intake, and structured error responses.
+- [x] Add FastAPI health endpoint, request schemas, validated upload intake, and structured error responses. Verified with `python3 -m unittest discover -s services/api/tests` and `npm run check`.
 - [ ] Add temporary job/artifact storage with retention cleanup and a job-status state machine.
 - [ ] Implement face detection, primary-face selection, face-quality gates, and deterministic test fixtures.
 - [ ] Render a completed mock evidence report end-to-end from uploaded image metadata and quality findings.
