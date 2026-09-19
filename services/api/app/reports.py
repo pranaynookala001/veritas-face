@@ -1,29 +1,42 @@
-"""Assemble the temporary v1 mock report without making authenticity claims."""
+"""Assemble the temporary local evidence report without authenticity claims."""
 
 from __future__ import annotations
 
-from io import BytesIO
-
-from PIL import Image
-
 from .domain import Evidence, Report, Verdict
 from .face_quality import FaceAssessment
+from .provenance import (
+    C2paVerifier,
+    PROVENANCE_ADAPTER_VERSION,
+    c2pa_detail,
+    inspect_provenance,
+    metadata_detail,
+)
 from .storage import StoredArtifact
 
 
-REPORT_VERSION = "mock-evidence-v1"
-CALIBRATION_VERSION = "not_calibrated_mock_v1"
+REPORT_VERSION = "local-evidence-v2"
+CALIBRATION_VERSION = "not_calibrated_v1"
 FACE_QUALITY_VERSION = "1.0"
 
 
-def build_mock_report(artifact: StoredArtifact, assessment: FaceAssessment) -> Report:
-    """Build a completed, explicitly inconclusive report from local eligibility evidence.
+def build_local_report(
+    artifact: StoredArtifact,
+    assessment: FaceAssessment,
+    *,
+    c2pa_verifier: C2paVerifier | None = None,
+) -> Report:
+    """Build an explicitly inconclusive report from local eligibility and provenance.
 
-    V1 has no provenance verifier or forensic model yet. A quality-passing image is
-    therefore still inconclusive; quality failures only add their concrete reason
-    codes and never become authenticity evidence.
+    A verified credential only attests to declared provenance, and V1 has no
+    synthetic-portrait detector score. A quality-passing image therefore remains
+    inconclusive; quality failures only add concrete reason codes.
     """
-    reasons = assessment.inconclusive_reasons or ("mock_analysis_no_detector_score",)
+    provenance = inspect_provenance(
+        artifact.content,
+        artifact.media_type,
+        c2pa_verifier=c2pa_verifier,
+    )
+    reasons = assessment.inconclusive_reasons or ("no_synthetic_detector_score",)
     quality_status = "inconclusive" if assessment.inconclusive_reasons else "passed"
     quality_detail = (
         "Face-quality gates require an inconclusive result: "
@@ -42,8 +55,14 @@ def build_mock_report(artifact: StoredArtifact, assessment: FaceAssessment) -> R
             Evidence(
                 source="image_metadata",
                 status="observed",
-                detail=_metadata_detail(artifact),
-                version="pillow-decoder",
+                detail=metadata_detail(provenance.metadata),
+                version=f"provenance-adapter-{PROVENANCE_ADAPTER_VERSION}",
+            ),
+            Evidence(
+                source="c2pa_content_credentials",
+                status=provenance.c2pa.status.value,
+                detail=c2pa_detail(provenance.c2pa),
+                version=provenance.c2pa.version,
             ),
             Evidence(
                 source="face_quality",
@@ -52,18 +71,9 @@ def build_mock_report(artifact: StoredArtifact, assessment: FaceAssessment) -> R
                 version=FACE_QUALITY_VERSION,
             ),
         ),
-        model_versions={"face_quality": FACE_QUALITY_VERSION},
+        model_versions={
+            "c2pa": provenance.c2pa.version,
+            "face_quality": FACE_QUALITY_VERSION,
+            "provenance_adapter": PROVENANCE_ADAPTER_VERSION,
+        },
     )
-
-
-def _metadata_detail(artifact: StoredArtifact) -> str:
-    """Summarize safe decoded-image facts without returning metadata values."""
-    with Image.open(BytesIO(artifact.content)) as image:
-        image.load()
-        has_embedded_metadata = bool(image.info or image.getexif())
-        metadata_presence = "embedded metadata is present" if has_embedded_metadata else "no embedded metadata is present"
-        format_name = (image.format or artifact.media_type).upper()
-        return (
-            f"Decoded {format_name} image, {image.width} × {image.height} pixels; "
-            f"{metadata_presence}. Metadata presence or absence is not an authenticity signal."
-        )

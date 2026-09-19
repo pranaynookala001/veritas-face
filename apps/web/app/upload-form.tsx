@@ -67,15 +67,15 @@ export function UploadForm() {
 
     setIsSubmitting(true);
     setReport(null);
-    setNotice({ kind: "info", message: "Uploading the portrait and preparing its local mock evidence report…" });
+    setNotice({ kind: "info", message: "Uploading the portrait and preparing its local evidence report…" });
     try {
       const job = await createAnalysisJob(selectedFile);
-      setNotice({ kind: "info", message: "Upload accepted. Checking local image metadata and face-quality gates…" });
+      setNotice({ kind: "info", message: "Upload accepted. Checking local metadata, Content Credentials, and face-quality gates…" });
       const completedReport = await waitForCompletedReport(job.job_id);
       setReport(completedReport);
       setNotice({
         kind: "success",
-        message: "The local mock evidence report is ready. It remains inconclusive until provenance and detector evidence are available.",
+        message: "The local evidence report is ready. It remains inconclusive until synthetic-detector evidence is available.",
       });
     } catch (error) {
       setNotice({
@@ -156,7 +156,7 @@ export function UploadForm() {
       ) : null}
 
       <button className="primary-button" type="submit" disabled={!selectedFile || isSubmitting}>
-        {isSubmitting ? "Preparing mock report…" : "Create mock evidence report"}
+        {isSubmitting ? "Preparing evidence report…" : "Create evidence report"}
       </button>
       </form>
 
@@ -168,11 +168,11 @@ export function UploadForm() {
 function EvidenceReportPanel({ report }: { report: EvidenceReport }) {
   return (
     <section className="report-panel" aria-labelledby="report-heading">
-      <p className="eyebrow">COMPLETED LOCAL MOCK REPORT</p>
+      <p className="eyebrow">COMPLETED LOCAL EVIDENCE REPORT</p>
       <h2 id="report-heading">Assessment: {formatVerdict(report.verdict)}</h2>
       <p className="report-panel__summary">
         This is a local eligibility report, not a proof of origin. It remains inconclusive because
-        provenance verification and synthetic-portrait detector scores are not available yet.
+        no synthetic-portrait detector score is available yet.
       </p>
 
       <div className="report-panel__section">
@@ -213,7 +213,7 @@ function formatReason(reason: string) {
     face_too_blurry: "The selected face is too blurry for a meaningful assessment.",
     face_too_dark: "The selected face is too dark for a meaningful assessment.",
     face_too_bright: "The selected face is too bright for a meaningful assessment.",
-    mock_analysis_no_detector_score: "No provenance or synthetic-detector score is available in this local mock report.",
+    no_synthetic_detector_score: "No synthetic-portrait detector score is available in this local evidence report.",
   };
   return labels[reason] ?? formatLabel(reason);
 }

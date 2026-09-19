@@ -1,6 +1,6 @@
-# API contract — v1 local mock report
+# API contract — v1 local evidence report
 
-The API exposes an asynchronous job resource. Its implemented intake boundary validates image content before private, temporary artifact storage or analysis begins. A content type from the browser is only a hint: the API verifies the encoded image independently. The local development worker then assembles a mock evidence report from safe decoded-image metadata and face-quality findings only.
+The API exposes an asynchronous job resource. Its implemented intake boundary validates image content before private, temporary artifact storage or analysis begins. A content type from the browser is only a hint: the API verifies the encoded image independently. The local development worker then assembles an evidence report from safe decoded-image metadata facts, offline C2PA/Content Credentials verification, and face-quality findings.
 
 ## `GET /health`
 
@@ -52,8 +52,8 @@ Once the local worker completes, the same resource also includes a report:
   "status": "completed",
   "expires_at": "2026-09-13T23:00:00Z",
   "report": {
-    "report_version": "mock-evidence-v1",
-    "calibration_version": "not_calibrated_mock_v1",
+    "report_version": "local-evidence-v2",
+    "calibration_version": "not_calibrated_v1",
     "verdict": "inconclusive",
     "confidence": null,
     "reasons": ["no_face_detected"],
@@ -61,8 +61,14 @@ Once the local worker completes, the same resource also includes a report:
       {
         "source": "image_metadata",
         "status": "observed",
-        "detail": "Decoded PNG image, 800 × 800 pixels; no embedded metadata is present. Metadata presence or absence is not an authenticity signal.",
-        "version": "pillow-decoder"
+        "detail": "Decoded PNG image, 800 × 800 pixels; EXIF metadata is not present; XMP metadata is not present; no embedded metadata is present. Metadata presence or absence is not an authenticity signal.",
+        "version": "provenance-adapter-1.0"
+      },
+      {
+        "source": "c2pa_content_credentials",
+        "status": "not_present",
+        "detail": "No embedded C2PA/Content Credentials manifest was found. Missing provenance is not evidence that this portrait is authentic or synthetic.",
+        "version": "c2pa-python-0.37.10"
       },
       {
         "source": "face_quality",
@@ -71,7 +77,11 @@ Once the local worker completes, the same resource also includes a report:
         "version": "1.0"
       }
     ],
-    "model_versions": {"face_quality": "1.0"}
+    "model_versions": {
+      "c2pa": "c2pa-python-0.37.10",
+      "face_quality": "1.0",
+      "provenance_adapter": "1.0"
+    }
   }
 }
 ```
@@ -105,14 +115,14 @@ Error codes include `empty_upload` (400), `upload_too_large` (413), `unsupported
 - `verdict` is one of `likely_synthetic`, `likely_authentic`, or `inconclusive`.
 - `inconclusive` includes at least one quality or evidence reason.
 - Detector and provenance evidence retain source/version/status details.
-- No raw image, facial embedding, or original filename appears in a report.
-- Every report includes report and calibration version identifiers. The current local mock report uses `not_calibrated_mock_v1` because it has no detector score to calibrate.
+- No raw image, facial embedding, original filename, embedded metadata value, C2PA manifest content, or signer identity appears in a report.
+- Every report includes report and calibration version identifiers. The current local evidence report uses `not_calibrated_v1` because it has no detector score to calibrate.
 
 ## Local browser connection
 
 The web app submits to `http://localhost:8000` by default and polls its job resource until `report` is available. Set `NEXT_PUBLIC_API_BASE_URL` to use another API URL. The API permits browser requests from `http://localhost:3000` by default; set `VERITAS_FACE_WEB_ORIGINS` to a comma-separated allow-list for another local origin.
 
-The mock worker can report only decoded image metadata and face eligibility. It always returns `inconclusive`: no C2PA/Content Credentials verifier, EXIF/XMP provenance adapter, or synthetic-portrait detector score is available at this milestone. In particular, metadata presence or absence must never be interpreted as origin evidence.
+The local worker extracts presence-only EXIF/XMP facts and verifies embedded C2PA/Content Credentials with `c2pa-python`. Remote C2PA manifest fetch is disabled, so the worker does not retrieve external manifest stores for uploaded portraits. A C2PA result is normalized to `verified`, `invalid`, `not_present`, or `unavailable`; only `verified` means the embedded credential validated, and it verifies declared provenance rather than portrait authenticity. The report always returns `inconclusive` until a synthetic-portrait detector score is available. In particular, missing, invalid, or unavailable provenance and metadata presence or absence must never be interpreted as origin evidence.
 
 ## C++ inference service
 

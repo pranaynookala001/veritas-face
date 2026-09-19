@@ -26,7 +26,7 @@ export async function createAnalysisJob(file, options = {}) {
 }
 
 /**
- * Fetch public job state and a completed mock report when the worker has finished.
+ * Fetch public job state and a completed evidence report when the worker has finished.
  *
  * @param {string} jobId
  * @param {{ apiBaseUrl?: string, fetchImpl?: typeof fetch }} [options]

@@ -103,7 +103,7 @@ class ApiTests(unittest.TestCase):
         self.assertNotIn("private-portrait.png", str(job.json()))
         self.assertNotIn(image_bytes().decode(errors="ignore"), str(job.json()))
 
-    def test_uploaded_image_receives_a_completed_mock_quality_report(self) -> None:
+    def test_uploaded_image_receives_a_completed_local_evidence_report(self) -> None:
         receipt = self.client.post(
             "/v1/jobs",
             files={"portrait": ("private-portrait.png", image_bytes(), "image/png")},
@@ -118,15 +118,17 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(payload["status"], "completed")
         self.assertEqual(payload["report"]["verdict"], "inconclusive")
         self.assertIsNone(payload["report"]["confidence"])
-        self.assertEqual(payload["report"]["report_version"], "mock-evidence-v1")
-        self.assertEqual(payload["report"]["calibration_version"], "not_calibrated_mock_v1")
+        self.assertEqual(payload["report"]["report_version"], "local-evidence-v2")
+        self.assertEqual(payload["report"]["calibration_version"], "not_calibrated_v1")
         self.assertIn("no_face_detected", payload["report"]["reasons"])
         self.assertEqual(
             [item["source"] for item in payload["report"]["evidence"]],
-            ["image_metadata", "face_quality"],
+            ["image_metadata", "c2pa_content_credentials", "face_quality"],
         )
         self.assertIn("2 × 2 pixels", payload["report"]["evidence"][0]["detail"])
         self.assertIn("not an authenticity signal", payload["report"]["evidence"][0]["detail"])
+        self.assertEqual(payload["report"]["evidence"][1]["status"], "not_present")
+        self.assertIn("Missing provenance is not evidence", payload["report"]["evidence"][1]["detail"])
         self.assertNotIn("private-portrait.png", str(payload))
         self.assertNotIn(image_bytes().decode(errors="ignore"), str(payload))
 
@@ -286,7 +288,7 @@ class TemporaryJobStoreTests(unittest.TestCase):
         report = Report(
             verdict=Verdict.INCONCLUSIVE,
             confidence=None,
-            reasons=("mock_analysis_no_detector_score",),
+            reasons=("no_synthetic_detector_score",),
         )
 
         completed = self.store.complete_with_report(job.job_id, report, now=self.created_at)

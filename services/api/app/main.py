@@ -26,7 +26,7 @@ from .schemas import (
     ReportResponse,
     ValidationIssue,
 )
-from .reports import build_mock_report
+from .reports import build_local_report
 from .storage import JobExpiredError, JobStateError, StoredArtifact, TemporaryJobStore
 
 
@@ -70,12 +70,12 @@ def get_job_store() -> TemporaryJobStore:
     return job_store
 
 
-def process_mock_job(store: TemporaryJobStore, job_id: UUID) -> None:
-    """Run the local placeholder worker and retain only its non-sensitive report."""
+def process_local_job(store: TemporaryJobStore, job_id: UUID) -> None:
+    """Run local quality/provenance analysis and retain only its safe report."""
     try:
         artifact = store.get_artifact(job_id)
         assessment = assess_encoded_image(artifact.content)
-        report: Report = build_mock_report(artifact, assessment)
+        report: Report = build_local_report(artifact, assessment)
         store.complete_with_report(job_id, report)
     except (JobExpiredError, JobStateError):
         return
@@ -166,7 +166,7 @@ async def create_job(
     job = store.create_job(
         StoredArtifact(content=validated_upload.content, media_type=validated_upload.media_type),
     )
-    background_tasks.add_task(process_mock_job, store, job.job_id)
+    background_tasks.add_task(process_local_job, store, job.job_id)
     return JobAcceptedResponse(
         job_id=job.job_id,
         expires_at=job.expires_at,
