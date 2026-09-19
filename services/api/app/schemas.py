@@ -17,6 +17,32 @@ class HealthResponse(BaseModel):
     version: str
 
 
+class EvidenceResponse(BaseModel):
+    """One non-sensitive, versioned source used to construct a report."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    source: str
+    status: str
+    detail: str
+    version: str | None = None
+    score: float | None = Field(default=None, ge=0, le=1)
+
+
+class ReportResponse(BaseModel):
+    """Completed evidence report without image bytes or identifying metadata."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    report_version: str
+    calibration_version: str
+    verdict: Literal["likely_synthetic", "likely_authentic", "inconclusive"]
+    confidence: float | None = Field(default=None, ge=0, le=1)
+    reasons: list[str]
+    evidence: list[EvidenceResponse]
+    model_versions: dict[str, str]
+
+
 class JobStatusResponse(BaseModel):
     """Public metadata for a temporary asynchronous job."""
 
@@ -36,6 +62,13 @@ class JobAcceptedResponse(JobStatusResponse):
     """Receipt returned after an image has passed intake validation."""
 
     status: Literal["queued"] = "queued"
+
+
+class JobCompletedResponse(JobStatusResponse):
+    """Completed job metadata together with the non-sensitive evidence report."""
+
+    status: Literal["completed"] = "completed"
+    report: ReportResponse
 
 
 class ValidationIssue(BaseModel):

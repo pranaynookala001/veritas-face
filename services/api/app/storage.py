@@ -10,7 +10,7 @@ from tempfile import TemporaryDirectory
 from threading import RLock
 from uuid import UUID, uuid4
 
-from .domain import JobStatus
+from .domain import JobStatus, Report
 
 
 _ALLOWED_TRANSITIONS: dict[JobStatus, frozenset[JobStatus]] = {
@@ -48,6 +48,7 @@ class StoredJob:
     expires_at: datetime
     media_type: str
     artifact_path: Path | None
+    report: Report | None = None
 
 
 class TemporaryJobStore:
@@ -140,6 +141,36 @@ class TemporaryJobStore:
             self._jobs[job_id] = updated
             return replace(updated)
 
+    def complete_with_report(
+        self,
+        job_id: UUID,
+        report: Report,
+        *,
+        now: datetime | None = None,
+    ) -> StoredJob:
+        """Atomically move a queued worker job through processing to a completed report."""
+        report.validate()
+        with self._lock:
+            self._cleanup_expired_locked(_as_utc(now or datetime.now(timezone.utc)))
+            job = self._require_job(job_id)
+            if job.status is not JobStatus.QUEUED:
+                raise JobStateError(f"cannot attach a report to {job.status.value} job")
+            processing = replace(job, status=JobStatus.PROCESSING)
+            completed = replace(processing, status=JobStatus.COMPLETED, report=report)
+            self._jobs[job_id] = completed
+            return replace(completed)
+
+    def fail_job(self, job_id: UUID, *, now: datetime | None = None) -> StoredJob:
+        """Record an internal worker failure without exposing implementation details publicly."""
+        with self._lock:
+            self._cleanup_expired_locked(_as_utc(now or datetime.now(timezone.utc)))
+            job = self._require_job(job_id)
+            if job.status not in {JobStatus.QUEUED, JobStatus.PROCESSING}:
+                raise JobStateError(f"cannot fail {job.status.value} job")
+            failed = replace(job, status=JobStatus.FAILED)
+            self._jobs[job_id] = failed
+            return replace(failed)
+
     def cleanup_expired(self, *, now: datetime | None = None) -> int:
         """Delete expired artifacts and retain only an ``expired`` metadata tombstone."""
         with self._lock:
@@ -161,7 +192,7 @@ class TemporaryJobStore:
             if job.status is JobStatus.EXPIRED or job.expires_at > now:
                 continue
             self._delete_artifact(job)
-            self._jobs[job_id] = replace(job, status=JobStatus.EXPIRED, artifact_path=None)
+            self._jobs[job_id] = replace(job, status=JobStatus.EXPIRED, artifact_path=None, report=None)
             expired_count += 1
         return expired_count
 

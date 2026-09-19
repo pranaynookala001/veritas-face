@@ -3,34 +3,53 @@
 from __future__ import annotations
 
 from datetime import timedelta
+import os
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import Depends, FastAPI, File, Request, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, File, Request, UploadFile
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from .domain import Report
+from .face_quality import assess_encoded_image
 from .intake import UploadValidationError, validate_upload
 from .schemas import (
     ErrorBody,
     ErrorResponse,
     HealthResponse,
     JobAcceptedResponse,
+    JobCompletedResponse,
     JobStatusResponse,
+    ReportResponse,
     ValidationIssue,
 )
-from .storage import StoredArtifact, TemporaryJobStore
+from .reports import build_mock_report
+from .storage import JobExpiredError, JobStateError, StoredArtifact, TemporaryJobStore
 
 
 APP_VERSION = "0.1.0"
 JOB_RETENTION = timedelta(hours=24)
 job_store = TemporaryJobStore(JOB_RETENTION)
+WEB_ORIGINS = tuple(
+    origin.strip()
+    for origin in os.getenv("VERITAS_FACE_WEB_ORIGINS", "http://localhost:3000").split(",")
+    if origin.strip()
+)
 
 app = FastAPI(
     title="Veritas Face API",
     version=APP_VERSION,
-    description="Validated, temporary intake and job status for synthetic portrait analysis.",
+    description="Validated temporary intake, local quality checks, and evidence reports for synthetic portrait analysis.",
+)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=list(WEB_ORIGINS),
+    allow_credentials=False,
+    allow_methods=["GET", "POST"],
+    allow_headers=["*"],
 )
 
 
@@ -49,6 +68,22 @@ def error_response(
 def get_job_store() -> TemporaryJobStore:
     """Expose local storage as an overridable dependency for API and worker tests."""
     return job_store
+
+
+def process_mock_job(store: TemporaryJobStore, job_id: UUID) -> None:
+    """Run the local placeholder worker and retain only its non-sensitive report."""
+    try:
+        artifact = store.get_artifact(job_id)
+        assessment = assess_encoded_image(artifact.content)
+        report: Report = build_mock_report(artifact, assessment)
+        store.complete_with_report(job_id, report)
+    except (JobExpiredError, JobStateError):
+        return
+    except Exception:
+        try:
+            store.fail_job(job_id)
+        except (JobExpiredError, JobStateError):
+            pass
 
 
 @app.exception_handler(UploadValidationError)
@@ -119,6 +154,7 @@ async def create_job(
         UploadFile,
         File(description="One JPEG, PNG, or WebP portrait, no larger than 10 MiB."),
     ],
+    background_tasks: BackgroundTasks,
     store: Annotated[TemporaryJobStore, Depends(get_job_store)],
 ) -> JobAcceptedResponse:
     """Validate an upload and issue the temporary job receipt.
@@ -130,6 +166,7 @@ async def create_job(
     job = store.create_job(
         StoredArtifact(content=validated_upload.content, media_type=validated_upload.media_type),
     )
+    background_tasks.add_task(process_mock_job, store, job.job_id)
     return JobAcceptedResponse(
         job_id=job.job_id,
         expires_at=job.expires_at,
@@ -138,20 +175,28 @@ async def create_job(
 
 @app.get(
     "/v1/jobs/{job_id}",
-    response_model=JobStatusResponse,
+    response_model=JobStatusResponse | JobCompletedResponse,
     responses={404: {"model": ErrorResponse}},
     tags=["jobs"],
 )
 async def get_job(
     job_id: UUID,
     store: Annotated[TemporaryJobStore, Depends(get_job_store)],
-) -> JobStatusResponse | JSONResponse:
+) -> JobStatusResponse | JobCompletedResponse | JSONResponse:
     """Return non-sensitive job state after deleting artifacts past retention."""
     job = store.get_job(job_id)
     if job is None:
         return error_response(404, "job_not_found", "No job exists for this identifier.")
+    response = {
+        "job_id": job.job_id,
+        "status": job.status.value,
+        "expires_at": job.expires_at,
+    }
+    if job.report is not None:
+        return JobCompletedResponse(
+            **response,
+            report=ReportResponse(**job.report.as_dict()),
+        )
     return JobStatusResponse(
-        job_id=job.job_id,
-        status=job.status.value,
-        expires_at=job.expires_at,
+        **response,
     )

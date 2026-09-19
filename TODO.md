@@ -12,7 +12,7 @@
 - [x] Add FastAPI health endpoint, request schemas, validated upload intake, and structured error responses. Verified with `python3 -m unittest discover -s services/api/tests` and `npm run check`.
 - [x] Add temporary job/artifact storage with retention cleanup and a job-status state machine. Verified with 17 API tests and the root quality gate.
 - [x] Implement face detection, primary-face selection, face-quality gates, and deterministic test fixtures. Verified with 24 API tests and the root quality gate.
-- [ ] Render a completed mock evidence report end-to-end from uploaded image metadata and quality findings.
+- [x] Render a completed mock evidence report end-to-end from uploaded image metadata and quality findings. Verified with 30 API tests, 8 web tests, and the root quality gate.
 
 ## Milestone 2 — forensic and inference evidence
 

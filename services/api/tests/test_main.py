@@ -12,7 +12,7 @@ from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.domain import JobStatus
+from app.domain import JobStatus, Report, Verdict
 from app.intake import MAX_UPLOAD_BYTES
 from app.main import APP_VERSION, app, get_job_store
 from app.storage import JobExpiredError, JobStateError, StoredArtifact, TemporaryJobStore
@@ -71,6 +71,18 @@ class ApiTests(unittest.TestCase):
             {"status": "ok", "service": "veritas-face-api", "version": APP_VERSION},
         )
 
+    def test_local_web_origin_may_submit_and_read_job_reports(self) -> None:
+        response = self.client.options(
+            "/v1/jobs",
+            headers={
+                "Origin": "http://localhost:3000",
+                "Access-Control-Request-Method": "POST",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["access-control-allow-origin"], "http://localhost:3000")
+
     def test_valid_png_receives_a_queued_job_receipt(self) -> None:
         response = self.client.post(
             "/v1/jobs",
@@ -87,9 +99,36 @@ class ApiTests(unittest.TestCase):
 
         job = self.client.get(f"/v1/jobs/{payload['job_id']}")
         self.assertEqual(job.status_code, 200)
-        self.assertEqual(job.json()["status"], "queued")
+        self.assertEqual(job.json()["status"], "completed")
         self.assertNotIn("private-portrait.png", str(job.json()))
         self.assertNotIn(image_bytes().decode(errors="ignore"), str(job.json()))
+
+    def test_uploaded_image_receives_a_completed_mock_quality_report(self) -> None:
+        receipt = self.client.post(
+            "/v1/jobs",
+            files={"portrait": ("private-portrait.png", image_bytes(), "image/png")},
+        )
+
+        self.assertEqual(receipt.status_code, 202)
+        self.assertEqual(receipt.json()["status"], "queued")
+        response = self.client.get(f"/v1/jobs/{receipt.json()['job_id']}")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["status"], "completed")
+        self.assertEqual(payload["report"]["verdict"], "inconclusive")
+        self.assertIsNone(payload["report"]["confidence"])
+        self.assertEqual(payload["report"]["report_version"], "mock-evidence-v1")
+        self.assertEqual(payload["report"]["calibration_version"], "not_calibrated_mock_v1")
+        self.assertIn("no_face_detected", payload["report"]["reasons"])
+        self.assertEqual(
+            [item["source"] for item in payload["report"]["evidence"]],
+            ["image_metadata", "face_quality"],
+        )
+        self.assertIn("2 × 2 pixels", payload["report"]["evidence"][0]["detail"])
+        self.assertIn("not an authenticity signal", payload["report"]["evidence"][0]["detail"])
+        self.assertNotIn("private-portrait.png", str(payload))
+        self.assertNotIn(image_bytes().decode(errors="ignore"), str(payload))
 
     def test_unknown_job_uses_the_error_envelope(self) -> None:
         response = self.client.get("/v1/jobs/00000000-0000-0000-0000-000000000000")
@@ -238,6 +277,23 @@ class TemporaryJobStoreTests(unittest.TestCase):
         self.assertEqual(self.store.get_job(job.job_id, now=job.expires_at).status, JobStatus.EXPIRED)
         with self.assertRaises(JobExpiredError):
             self.store.get_artifact(job.job_id, now=job.expires_at)
+
+    def test_expiration_removes_the_completed_report_with_the_artifact(self) -> None:
+        job = self.store.create_job(
+            StoredArtifact(content=b"validated image", media_type="image/png"),
+            now=self.created_at,
+        )
+        report = Report(
+            verdict=Verdict.INCONCLUSIVE,
+            confidence=None,
+            reasons=("mock_analysis_no_detector_score",),
+        )
+
+        completed = self.store.complete_with_report(job.job_id, report, now=self.created_at)
+        expired = self.store.get_job(job.job_id, now=completed.expires_at)
+
+        self.assertEqual(expired.status, JobStatus.EXPIRED)
+        self.assertIsNone(expired.report)
 
 
 if __name__ == "__main__":

@@ -44,9 +44,15 @@ class Report:
     confidence: Optional[float]
     reasons: tuple[str, ...] = ()
     evidence: tuple[Evidence, ...] = ()
+    report_version: str = "1.0"
+    calibration_version: str = "not_available"
     model_versions: dict[str, str] = field(default_factory=dict)
 
     def validate(self) -> None:
+        if not self.report_version.strip():
+            raise ValueError("reports require a report version")
+        if not self.calibration_version.strip():
+            raise ValueError("reports require calibration information")
         if self.confidence is not None and not 0 <= self.confidence <= 1:
             raise ValueError("confidence must be between 0 and 1")
         if self.verdict is Verdict.INCONCLUSIVE and not self.reasons:
@@ -58,6 +64,8 @@ class Report:
     def as_dict(self) -> dict[str, Any]:
         self.validate()
         return {
+            "report_version": self.report_version,
+            "calibration_version": self.calibration_version,
             "verdict": self.verdict.value,
             "confidence": self.confidence,
             "reasons": list(self.reasons),

@@ -31,6 +31,18 @@ class ReportContractTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "scores"):
             report.validate()
 
+    def test_report_requires_version_and_calibration_information(self) -> None:
+        missing_versions = Report(
+            verdict=Verdict.INCONCLUSIVE,
+            confidence=None,
+            reasons=("missing_evidence",),
+            report_version="",
+            calibration_version="",
+        )
+
+        with self.assertRaisesRegex(ValueError, "report version"):
+            missing_versions.validate()
+
 
 if __name__ == "__main__":
     unittest.main()

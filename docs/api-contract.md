@@ -1,6 +1,6 @@
-# API contract — v1 intake
+# API contract — v1 local mock report
 
-The API exposes an asynchronous job resource. Its implemented intake boundary validates image content before private, temporary artifact storage or analysis begins. A content type from the browser is only a hint: the API verifies the encoded image independently.
+The API exposes an asynchronous job resource. Its implemented intake boundary validates image content before private, temporary artifact storage or analysis begins. A content type from the browser is only a hint: the API verifies the encoded image independently. The local development worker then assembles a mock evidence report from safe decoded-image metadata and face-quality findings only.
 
 ## `GET /health`
 
@@ -30,11 +30,11 @@ Accepts one JPEG, PNG, or WebP image. The response is `202 Accepted` with:
 
 Submit the file as `multipart/form-data` with a `portrait` field. Images must be non-empty, at most 10 MiB, and decode as JPEG, PNG, or WebP. When a specific image MIME type is declared, it must match the decoded content; generic `application/octet-stream` is treated as unknown and decoded normally. The receipt deliberately contains neither an original filename nor image bytes.
 
-The local worker artifact is stored under a generated UUID, not the client filename, with owner-only permissions. It is retained for at most 24 hours. Every job create, status lookup, and worker artifact read performs retention cleanup; expired artifacts are deleted and only non-sensitive `expired` job metadata remains.
+The local worker artifact is stored under a generated UUID, not the client filename, with owner-only permissions. It is retained for at most 24 hours. Every job create, status lookup, and worker artifact read performs retention cleanup; expired artifacts and completed reports are deleted at expiry, leaving only non-sensitive `expired` job metadata.
 
 ## `GET /v1/jobs/{job_id}`
 
-Returns `200 OK` with the job's non-sensitive state:
+Returns `200 OK` with the job's non-sensitive state. While a report is being prepared, only these fields are present:
 
 ```json
 {
@@ -44,7 +44,39 @@ Returns `200 OK` with the job's non-sensitive state:
 }
 ```
 
-The state machine permits `queued` → `processing` → `completed` and either active state → `failed`. After retention cleanup, any state becomes `expired`; `expired`, `completed`, and `failed` are terminal. This endpoint never returns an uploaded image, client filename, or private artifact location. Unknown identifiers receive the standard `404 job_not_found` error envelope.
+Once the local worker completes, the same resource also includes a report:
+
+```json
+{
+  "job_id": "uuid",
+  "status": "completed",
+  "expires_at": "2026-09-13T23:00:00Z",
+  "report": {
+    "report_version": "mock-evidence-v1",
+    "calibration_version": "not_calibrated_mock_v1",
+    "verdict": "inconclusive",
+    "confidence": null,
+    "reasons": ["no_face_detected"],
+    "evidence": [
+      {
+        "source": "image_metadata",
+        "status": "observed",
+        "detail": "Decoded PNG image, 800 × 800 pixels; no embedded metadata is present. Metadata presence or absence is not an authenticity signal.",
+        "version": "pillow-decoder"
+      },
+      {
+        "source": "face_quality",
+        "status": "inconclusive",
+        "detail": "Face-quality gates require an inconclusive result: no_face_detected.",
+        "version": "1.0"
+      }
+    ],
+    "model_versions": {"face_quality": "1.0"}
+  }
+}
+```
+
+The state machine permits `queued` → `processing` → `completed` and either active state → `failed`. After retention cleanup, any state becomes `expired`; `expired`, `completed`, and `failed` are terminal. This endpoint never returns an uploaded image, client filename, private artifact location, or embedded metadata values. Unknown identifiers receive the standard `404 job_not_found` error envelope.
 
 ## Error responses
 
@@ -74,6 +106,13 @@ Error codes include `empty_upload` (400), `upload_too_large` (413), `unsupported
 - `inconclusive` includes at least one quality or evidence reason.
 - Detector and provenance evidence retain source/version/status details.
 - No raw image, facial embedding, or original filename appears in a report.
+- Every report includes report and calibration version identifiers. The current local mock report uses `not_calibrated_mock_v1` because it has no detector score to calibrate.
+
+## Local browser connection
+
+The web app submits to `http://localhost:8000` by default and polls its job resource until `report` is available. Set `NEXT_PUBLIC_API_BASE_URL` to use another API URL. The API permits browser requests from `http://localhost:3000` by default; set `VERITAS_FACE_WEB_ORIGINS` to a comma-separated allow-list for another local origin.
+
+The mock worker can report only decoded image metadata and face eligibility. It always returns `inconclusive`: no C2PA/Content Credentials verifier, EXIF/XMP provenance adapter, or synthetic-portrait detector score is available at this milestone. In particular, metadata presence or absence must never be interpreted as origin evidence.
 
 ## C++ inference service
 
