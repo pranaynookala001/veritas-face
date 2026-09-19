@@ -12,6 +12,7 @@
     "test:web": "npm run test --workspace=@veritas-face/web",
     "lint:web": "npm run lint --workspace=@veritas-face/web",
     "build:web": "npm run build --workspace=@veritas-face/web",
-    "check": "npm run check:manifest && npm run test:api && npm run test:web && npm run lint:web && npm run build:web"
+    "check:inference": "sh services/inference/run-checks.sh",
+    "check": "npm run check:manifest && npm run test:api && npm run check:inference && npm run test:web && npm run lint:web && npm run build:web"
   }
 }

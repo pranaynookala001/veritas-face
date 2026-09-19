@@ -126,4 +126,80 @@ The local worker extracts presence-only EXIF/XMP facts and verifies embedded C2P
 
 ## C++ inference service
 
-`POST /v1/infer` accepts a normalized RGB face crop and returns a normalized score, model identifier, model version, and duration. It does not determine the final verdict; Python's calibrated report builder owns that decision.
+The inference service defaults to `127.0.0.1:8080`; pass `--host` and `--port` to configure its IPv4 listener. It provides a dependency-free HTTP contract before a model is supplied, so a live process never implies that a classifier is ready.
+
+### `GET /health` and `GET /healthz`
+
+Both liveness endpoints return:
+
+```json
+{
+  "status": "ok",
+  "service": "veritas-face-inference",
+  "version": "0.1.0"
+}
+```
+
+They intentionally report process liveness only. Model availability belongs to the model-info endpoint.
+
+### `GET /v1/model-info`
+
+Returns the current model identity, readiness, and input contract without accepting image data. Until the ONNX runtime milestone, it returns:
+
+```json
+{
+  "service": "veritas-face-inference",
+  "version": "0.1.0",
+  "model": {
+    "id": "synthetic-portrait-classifier",
+    "version": "not_loaded",
+    "status": "unavailable"
+  },
+  "input": {
+    "color_space": "RGB",
+    "width": 224,
+    "height": 224,
+    "channels": 3,
+    "layout": "HWC",
+    "value_range": "0_to_255",
+    "normalization": "not_configured"
+  }
+}
+```
+
+All responses use `Cache-Control: no-store`. Unknown routes return a JSON `not_found` error; methods other than `GET` on these endpoints return `405` with `Allow: GET`.
+
+### `POST /v1/infer`
+
+This endpoint is defined now but returns a JSON `503 model_unavailable` response until an ONNX model is loaded. It does not retain a request body in that state. Once available, it will accept `application/json` with one standardized, primary-face crop:
+
+```json
+{
+  "face_crop": {
+    "color_space": "RGB",
+    "width": 224,
+    "height": 224,
+    "channels": 3,
+    "layout": "HWC",
+    "value_range": "0_to_255",
+    "pixels_base64": "base64-encoded row-major uint8 pixels"
+  }
+}
+```
+
+The decoded crop must contain exactly `width × height × channels` bytes, and the fixed geometry, layout, and normalization configuration reported by a ready `GET /v1/model-info` response govern valid requests. The service will reject malformed payloads with `400 invalid_inference_request`, an incompatible crop with `422 invalid_face_crop`, and an unloaded runtime with `503 model_unavailable`.
+
+A successful future response will be:
+
+```json
+{
+  "synthetic_probability": 0.78,
+  "detector": {
+    "id": "synthetic-portrait-classifier",
+    "version": "model-version"
+  },
+  "latency_ms": 14.2
+}
+```
+
+`synthetic_probability` is a model estimate, not a final verdict. It will be calibrated and combined with independent evidence by Python's report builder; the inference service never returns an authenticity determination.

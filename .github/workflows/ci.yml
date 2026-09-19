@@ -28,6 +28,8 @@ jobs:
         run: npm run check:manifest
       - name: Run API contract tests
         run: npm run test:api
+      - name: Run C++ inference contract tests
+        run: npm run check:inference
       - name: Run web validation tests
         run: npm run test:web
       - name: Lint web application

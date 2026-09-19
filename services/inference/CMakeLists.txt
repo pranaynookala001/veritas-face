@@ -8,5 +8,16 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 add_executable(veritas-inference src/main.cpp)
 target_compile_options(veritas-inference PRIVATE -Wall -Wextra -Wpedantic)
 
-# Milestone 2 links ONNX Runtime and a minimal HTTP transport here. Keeping the
-# scaffold dependency-free makes the initial C++ contract buildable everywhere.
+include(CTest)
+
+if(BUILD_TESTING)
+  find_package(Python3 3.9 COMPONENTS Interpreter REQUIRED)
+  add_test(
+    NAME inference-http-contract
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_http_contract.py
+            $<TARGET_FILE:veritas-inference>
+  )
+endif()
+
+# The HTTP contract intentionally has no inference-runtime dependency yet. The
+# following milestone supplies the ONNX implementation behind this stable API.

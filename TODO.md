@@ -17,7 +17,7 @@
 ## Milestone 2 — forensic and inference evidence
 
 - [x] Integrate C2PA/Content Credentials verification and EXIF/XMP extraction behind a normalized provenance adapter. Verified with 32 API tests, 8 web tests, and the root quality gate.
-- [ ] Define the ONNX inference HTTP contract and implement C++ service health/model-info endpoints.
+- [x] Define the ONNX inference HTTP contract and implement C++ service health/model-info endpoints. Verified with the C++ HTTP contract test and root quality gate.
 - [ ] Add C++ image preprocessing and CPU ONNX inference with Python/C++ parity tests.
 - [ ] Add baseline-detector adapter, score validation, latency capture, and model-version reporting.
 - [ ] Implement calibration, detector-disagreement policy, and explainable final-verdict generation.

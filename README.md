@@ -46,6 +46,8 @@ See [TODO.md](TODO.md) for the ordered implementation backlog. The first milesto
 
 The local web experience lets a person select one JPEG, PNG, or WebP portrait up to 10 MiB, submit it to the API, and view a completed evidence report. The API independently validates multipart `portrait` content, stores accepted bytes privately for at most 24 hours, then runs local face-quality gates and offline provenance checks in the background. `GET /v1/jobs/{job_id}` exposes a report only after processing completes; it contains safe decoded-image facts (format, dimensions, and EXIF/XMP presence), a normalized C2PA/Content Credentials verification result, and quality findings—never image bytes, embedded metadata values, manifest contents, signer identities, a client filename, or a facial embedding. Remote C2PA manifest retrieval is disabled for uploads. The report remains `inconclusive` until a synthetic-portrait detector score is available: missing, invalid, or unavailable provenance and metadata presence or absence are never evidence of authenticity or synthetic origin. See [the API contract](docs/api-contract.md) and [face-quality policy](docs/face-quality.md).
 
+The C++ inference service now provides local liveness (`/health`, `/healthz`) and model-readiness (`/v1/model-info`) endpoints. It is deliberately explicit that the classifier is unavailable until the ONNX inference milestone; a healthy process is not an authenticity result. Its HTTP contract and local launch options are documented in [the API contract](docs/api-contract.md#c-inference-service).
+
 ## Local prerequisites
 
 - Node.js 20+
