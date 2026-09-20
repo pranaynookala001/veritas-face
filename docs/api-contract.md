@@ -126,7 +126,15 @@ The local worker extracts presence-only EXIF/XMP facts and verifies embedded C2P
 
 ## C++ inference service
 
-The inference service defaults to `127.0.0.1:8080`; pass `--host` and `--port` to configure its IPv4 listener. It provides a dependency-free HTTP contract before a model is supplied, so a live process never implies that a classifier is ready.
+The inference service defaults to `127.0.0.1:8080`; pass `--host` and `--port` to configure its IPv4 listener. A service without a configured model provides its liveness and unavailable-model contract. To load a CPU ONNX model, start it with:
+
+```text
+veritas-inference --model /private/path/portrait-classifier.onnx \
+  --model-version model-release-id \
+  [--model-id synthetic-portrait-classifier] [--threads 1]
+```
+
+`--model-version` is required with `--model`, so reports always identify the configured artifact. A model-load or model-contract failure stops the process rather than silently serving a different model. The CMake build downloads the pinned official ONNX Runtime CPU SDK for local macOS and CI Linux targets on its first configure; for an offline or separately provisioned build, set `ONNXRUNTIME_ROOT` to an extracted official SDK instead. No model artifact is stored in this repository.
 
 ### `GET /health` and `GET /healthz`
 
@@ -144,7 +152,7 @@ They intentionally report process liveness only. Model availability belongs to t
 
 ### `GET /v1/model-info`
 
-Returns the current model identity, readiness, and input contract without accepting image data. Until the ONNX runtime milestone, it returns:
+Returns the current model identity, readiness, and input contract without accepting image data. Without `--model`, it returns:
 
 ```json
 {
@@ -167,11 +175,35 @@ Returns the current model identity, readiness, and input contract without accept
 }
 ```
 
+With a configured, validated CPU model it returns `status: "ready"` with the supplied model identifier and version:
+
+```json
+{
+  "service": "veritas-face-inference",
+  "version": "0.1.0",
+  "model": {
+    "id": "synthetic-portrait-classifier",
+    "version": "model-release-id",
+    "status": "ready",
+    "runtime": "onnxruntime-cpu"
+  },
+  "input": {
+    "color_space": "RGB",
+    "width": 224,
+    "height": 224,
+    "channels": 3,
+    "layout": "HWC",
+    "value_range": "0_to_255",
+    "normalization": "imagenet_rgb_v1"
+  }
+}
+```
+
 All responses use `Cache-Control: no-store`. Unknown routes return a JSON `not_found` error; methods other than `GET` on these endpoints return `405` with `Allow: GET`.
 
 ### `POST /v1/infer`
 
-This endpoint is defined now but returns a JSON `503 model_unavailable` response until an ONNX model is loaded. It does not retain a request body in that state. Once available, it will accept `application/json` with one standardized, primary-face crop:
+This endpoint returns a JSON `503 model_unavailable` response until an ONNX model is loaded. It does not retain a request body in that state. With a ready model, it accepts `application/json` with one standardized, primary-face crop:
 
 ```json
 {
@@ -187,9 +219,11 @@ This endpoint is defined now but returns a JSON `503 model_unavailable` response
 }
 ```
 
-The decoded crop must contain exactly `width × height × channels` bytes, and the fixed geometry, layout, and normalization configuration reported by a ready `GET /v1/model-info` response govern valid requests. The service will reject malformed payloads with `400 invalid_inference_request`, an incompatible crop with `422 invalid_face_crop`, and an unloaded runtime with `503 model_unavailable`.
+The decoded crop must contain exactly `width × height × channels` bytes. The service verifies fixed RGB/HWC geometry before converting row-major uint8 pixels to one float32 NCHW tensor. It applies the documented ImageNet RGB normalization per channel: `(pixel / 255 - mean) / standard_deviation`, with means `[0.485, 0.456, 0.406]` and standard deviations `[0.229, 0.224, 0.225]`.
 
-A successful future response will be:
+The configured ONNX model must expose exactly one `float32` input shaped `[1, 3, 224, 224]` and one `float32` output containing exactly one synthetic probability in the inclusive range `0` to `1`. The service rejects malformed JSON or missing fields with `400 invalid_inference_request`, an incompatible crop with `422 invalid_face_crop`, an unloaded model with `503 model_unavailable`, and a runtime failure with `503 inference_failed`.
+
+A successful response is:
 
 ```json
 {

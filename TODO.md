@@ -18,7 +18,7 @@
 
 - [x] Integrate C2PA/Content Credentials verification and EXIF/XMP extraction behind a normalized provenance adapter. Verified with 32 API tests, 8 web tests, and the root quality gate.
 - [x] Define the ONNX inference HTTP contract and implement C++ service health/model-info endpoints. Verified with the C++ HTTP contract test and root quality gate.
-- [ ] Add C++ image preprocessing and CPU ONNX inference with Python/C++ parity tests.
+- [x] Add C++ image preprocessing and CPU ONNX inference with Python/C++ parity tests. Verified with the two C++ HTTP tests, including a generated ONNX fixture compared against Python ONNX Runtime, and the root quality gate.
 - [ ] Add baseline-detector adapter, score validation, latency capture, and model-version reporting.
 - [ ] Implement calibration, detector-disagreement policy, and explainable final-verdict generation.
 
