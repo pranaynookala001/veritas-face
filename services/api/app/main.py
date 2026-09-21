@@ -13,6 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from .baseline_detector import BaselineDetector, OnnxInferenceBaselineDetector
 from .domain import Report
 from .face_quality import assess_encoded_image
 from .intake import UploadValidationError, validate_upload
@@ -33,6 +34,10 @@ from .storage import JobExpiredError, JobStateError, StoredArtifact, TemporaryJo
 APP_VERSION = "0.1.0"
 JOB_RETENTION = timedelta(hours=24)
 job_store = TemporaryJobStore(JOB_RETENTION)
+_inference_service_url = os.getenv("VERITAS_FACE_INFERENCE_URL", "").strip()
+baseline_detector: BaselineDetector | None = (
+    OnnxInferenceBaselineDetector(_inference_service_url) if _inference_service_url else None
+)
 WEB_ORIGINS = tuple(
     origin.strip()
     for origin in os.getenv("VERITAS_FACE_WEB_ORIGINS", "http://localhost:3000").split(",")
@@ -70,12 +75,21 @@ def get_job_store() -> TemporaryJobStore:
     return job_store
 
 
-def process_local_job(store: TemporaryJobStore, job_id: UUID) -> None:
+def get_baseline_detector() -> BaselineDetector | None:
+    """Expose the opt-in local inference adapter as an overridable dependency."""
+    return baseline_detector
+
+
+def process_local_job(
+    store: TemporaryJobStore,
+    job_id: UUID,
+    detector: BaselineDetector | None = None,
+) -> None:
     """Run local quality/provenance analysis and retain only its safe report."""
     try:
         artifact = store.get_artifact(job_id)
         assessment = assess_encoded_image(artifact.content)
-        report: Report = build_local_report(artifact, assessment)
+        report: Report = build_local_report(artifact, assessment, baseline_detector=detector)
         store.complete_with_report(job_id, report)
     except (JobExpiredError, JobStateError):
         return
@@ -156,6 +170,7 @@ async def create_job(
     ],
     background_tasks: BackgroundTasks,
     store: Annotated[TemporaryJobStore, Depends(get_job_store)],
+    detector: Annotated[BaselineDetector | None, Depends(get_baseline_detector)],
 ) -> JobAcceptedResponse:
     """Validate an upload and issue the temporary job receipt.
 
@@ -166,7 +181,7 @@ async def create_job(
     job = store.create_job(
         StoredArtifact(content=validated_upload.content, media_type=validated_upload.media_type),
     )
-    background_tasks.add_task(process_local_job, store, job.job_id)
+    background_tasks.add_task(process_local_job, store, job.job_id, detector)
     return JobAcceptedResponse(
         job_id=job.job_id,
         expires_at=job.expires_at,

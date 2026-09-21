@@ -75,7 +75,7 @@ export function UploadForm() {
       setReport(completedReport);
       setNotice({
         kind: "success",
-        message: "The local evidence report is ready. It remains inconclusive until synthetic-detector evidence is available.",
+        message: "The local evidence report is ready. Any detector probability remains uncalibrated evidence, not a conclusion.",
       });
     } catch (error) {
       setNotice({
@@ -171,8 +171,8 @@ function EvidenceReportPanel({ report }: { report: EvidenceReport }) {
       <p className="eyebrow">COMPLETED LOCAL EVIDENCE REPORT</p>
       <h2 id="report-heading">Assessment: {formatVerdict(report.verdict)}</h2>
       <p className="report-panel__summary">
-        This is a local eligibility report, not a proof of origin. It remains inconclusive because
-        no synthetic-portrait detector score is available yet.
+        This is a local eligibility report, not a proof of origin. It remains inconclusive until
+        calibration and detector-agreement policy can interpret its evidence safely.
       </p>
 
       <div className="report-panel__section">
@@ -213,7 +213,9 @@ function formatReason(reason: string) {
     face_too_blurry: "The selected face is too blurry for a meaningful assessment.",
     face_too_dark: "The selected face is too dark for a meaningful assessment.",
     face_too_bright: "The selected face is too bright for a meaningful assessment.",
-    no_synthetic_detector_score: "No synthetic-portrait detector score is available in this local evidence report.",
+    baseline_detector_unavailable: "The baseline synthetic-portrait detector could not provide a score.",
+    baseline_detector_response_invalid: "The baseline synthetic-portrait detector returned invalid evidence.",
+    detector_score_uncalibrated: "The detector score is available but has not yet been calibrated into a verdict.",
   };
   return labels[reason] ?? formatLabel(reason);
 }

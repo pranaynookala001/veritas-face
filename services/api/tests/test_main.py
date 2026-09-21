@@ -5,6 +5,7 @@ import tempfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 from uuid import UUID
 
 from fastapi.testclient import TestClient
@@ -12,9 +13,11 @@ from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from app.baseline_detector import BaselineDetectorResult, BaselineDetectorStatus
 from app.domain import JobStatus, Report, Verdict
+from app.face_quality import FaceAssessment, FaceQualityMetrics, FaceRectangle
 from app.intake import MAX_UPLOAD_BYTES
-from app.main import APP_VERSION, app, get_job_store
+from app.main import APP_VERSION, app, get_job_store, process_local_job
 from app.storage import JobExpiredError, JobStateError, StoredArtifact, TemporaryJobStore
 
 
@@ -40,6 +43,21 @@ def animated_png_bytes() -> bytes:
         loop=0,
     )
     return buffer.getvalue()
+
+
+class FixtureBaselineDetector:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def score_primary_face(self, _artifact: StoredArtifact, _assessment: FaceAssessment) -> BaselineDetectorResult:
+        self.calls += 1
+        return BaselineDetectorResult(
+            status=BaselineDetectorStatus.AVAILABLE,
+            score=0.61,
+            detector_id="baseline-portrait",
+            detector_version="test-model",
+            latency_ms=3.2,
+        )
 
 
 class ApiTests(unittest.TestCase):
@@ -118,19 +136,52 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(payload["status"], "completed")
         self.assertEqual(payload["report"]["verdict"], "inconclusive")
         self.assertIsNone(payload["report"]["confidence"])
-        self.assertEqual(payload["report"]["report_version"], "local-evidence-v2")
+        self.assertEqual(payload["report"]["report_version"], "local-evidence-v3")
         self.assertEqual(payload["report"]["calibration_version"], "not_calibrated_v1")
         self.assertIn("no_face_detected", payload["report"]["reasons"])
         self.assertEqual(
             [item["source"] for item in payload["report"]["evidence"]],
-            ["image_metadata", "c2pa_content_credentials", "face_quality"],
+            [
+                "image_metadata",
+                "c2pa_content_credentials",
+                "face_quality",
+                "baseline_synthetic_detector",
+            ],
         )
         self.assertIn("2 × 2 pixels", payload["report"]["evidence"][0]["detail"])
         self.assertIn("not an authenticity signal", payload["report"]["evidence"][0]["detail"])
         self.assertEqual(payload["report"]["evidence"][1]["status"], "not_present")
         self.assertIn("Missing provenance is not evidence", payload["report"]["evidence"][1]["detail"])
+        self.assertEqual(payload["report"]["evidence"][3]["status"], "skipped")
+        self.assertIn("not run", payload["report"]["evidence"][3]["detail"])
         self.assertNotIn("private-portrait.png", str(payload))
         self.assertNotIn(image_bytes().decode(errors="ignore"), str(payload))
+
+    def test_worker_passes_an_injected_baseline_detector_into_the_completed_report(self) -> None:
+        job = self.store.create_job(StoredArtifact(content=image_bytes(), media_type="image/png"))
+        detector = FixtureBaselineDetector()
+        usable_assessment = FaceAssessment(
+            image_width=224,
+            image_height=224,
+            face_count=1,
+            primary_face=FaceRectangle(20, 20, 128, 128),
+            quality=FaceQualityMetrics(brightness=100.0, sharpness_variance=100.0),
+            inconclusive_reasons=(),
+        )
+
+        with patch("app.main.assess_encoded_image", return_value=usable_assessment):
+            process_local_job(self.store, job.job_id, detector)
+
+        completed = self.store.get_job(job.job_id)
+        self.assertIsNotNone(completed)
+        assert completed is not None
+        self.assertEqual(completed.status, JobStatus.COMPLETED)
+        self.assertIsNotNone(completed.report)
+        assert completed.report is not None
+        report = completed.report.as_dict()
+        self.assertEqual(detector.calls, 1)
+        self.assertEqual(report["evidence"][3]["score"], 0.61)
+        self.assertEqual(report["model_versions"]["baseline_detector"], "baseline-portrait@test-model")
 
     def test_unknown_job_uses_the_error_envelope(self) -> None:
         response = self.client.get("/v1/jobs/00000000-0000-0000-0000-000000000000")

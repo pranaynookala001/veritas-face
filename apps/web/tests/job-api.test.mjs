@@ -49,7 +49,7 @@ test("waits for a completed report while the local worker is still processing", 
               status: "completed",
               expires_at: "2026-09-20T00:00:00Z",
               report: {
-                report_version: "local-evidence-v2",
+                report_version: "local-evidence-v3",
                 calibration_version: "not_calibrated_v1",
                 verdict: "inconclusive",
                 confidence: null,

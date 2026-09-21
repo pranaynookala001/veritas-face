@@ -52,7 +52,7 @@ Once the local worker completes, the same resource also includes a report:
   "status": "completed",
   "expires_at": "2026-09-13T23:00:00Z",
   "report": {
-    "report_version": "local-evidence-v2",
+    "report_version": "local-evidence-v3",
     "calibration_version": "not_calibrated_v1",
     "verdict": "inconclusive",
     "confidence": null,
@@ -75,9 +75,16 @@ Once the local worker completes, the same resource also includes a report:
         "status": "inconclusive",
         "detail": "Face-quality gates require an inconclusive result: no_face_detected.",
         "version": "1.0"
+      },
+      {
+        "source": "baseline_synthetic_detector",
+        "status": "skipped",
+        "detail": "The baseline detector was not run because face-quality gates require an inconclusive result.",
+        "version": "1.0"
       }
     ],
     "model_versions": {
+      "baseline_detector_adapter": "1.0",
       "c2pa": "c2pa-python-0.37.10",
       "face_quality": "1.0",
       "provenance_adapter": "1.0"
@@ -116,13 +123,19 @@ Error codes include `empty_upload` (400), `upload_too_large` (413), `unsupported
 - `inconclusive` includes at least one quality or evidence reason.
 - Detector and provenance evidence retain source/version/status details.
 - No raw image, facial embedding, original filename, embedded metadata value, C2PA manifest content, or signer identity appears in a report.
-- Every report includes report and calibration version identifiers. The current local evidence report uses `not_calibrated_v1` because it has no detector score to calibrate.
+- Every report includes report and calibration version identifiers. The current local evidence report uses `not_calibrated_v1`; even a valid detector score remains evidence until calibration and disagreement policy are available.
 
 ## Local browser connection
 
 The web app submits to `http://localhost:8000` by default and polls its job resource until `report` is available. Set `NEXT_PUBLIC_API_BASE_URL` to use another API URL. The API permits browser requests from `http://localhost:3000` by default; set `VERITAS_FACE_WEB_ORIGINS` to a comma-separated allow-list for another local origin.
 
-The local worker extracts presence-only EXIF/XMP facts and verifies embedded C2PA/Content Credentials with `c2pa-python`. Remote C2PA manifest fetch is disabled, so the worker does not retrieve external manifest stores for uploaded portraits. A C2PA result is normalized to `verified`, `invalid`, `not_present`, or `unavailable`; only `verified` means the embedded credential validated, and it verifies declared provenance rather than portrait authenticity. The report always returns `inconclusive` until a synthetic-portrait detector score is available. In particular, missing, invalid, or unavailable provenance and metadata presence or absence must never be interpreted as origin evidence.
+The local worker extracts presence-only EXIF/XMP facts and verifies embedded C2PA/Content Credentials with `c2pa-python`. Remote C2PA manifest fetch is disabled, so the worker does not retrieve external manifest stores for uploaded portraits. A C2PA result is normalized to `verified`, `invalid`, `not_present`, or `unavailable`; only `verified` means the embedded credential validated, and it verifies declared provenance rather than portrait authenticity. In particular, missing, invalid, or unavailable provenance and metadata presence or absence must never be interpreted as origin evidence.
+
+## Baseline detector adapter
+
+Set `VERITAS_FACE_INFERENCE_URL` to the base URL of the local C++ inference service (for example, `http://127.0.0.1:8080`) to enable the baseline detector. Without that opt-in setting, no portrait bytes leave the API worker and the detector evidence is reported as `unavailable`. The adapter runs only after one primary face has passed every quality gate. It crops that face in memory, converts it to RGB/HWC, resizes it to 224 × 224 pixels, and sends it to `POST /v1/infer`; neither the crop nor the service response body is retained in the completed report.
+
+For a `200` response, the adapter accepts a score only when `synthetic_probability` is a finite number from 0 through 1 inclusive, `latency_ms` is a finite non-negative number, and `detector.id` plus `detector.version` are non-empty strings. A valid result appears as `baseline_synthetic_detector` evidence with the score, reported inference latency, and model version; `model_versions.baseline_detector` is `id@version`. A `503` model response or connection failure is `unavailable`; a malformed successful response or unexpected status is `invalid_response`. These outcomes always keep the report `inconclusive`. The current adapter deliberately does not turn a score into a verdict: its probability is uncalibrated and awaits the calibration and detector-disagreement policy.
 
 ## C++ inference service
 
