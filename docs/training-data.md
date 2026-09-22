@@ -30,3 +30,54 @@ record-level held-out manifest, not at the source catalog.
 
 Run `python3 training/validate_manifests.py` before materializing sources and
 `python3 -m unittest discover -s training/tests` after manifest edits.
+
+## Private fine-tuning runs
+
+[`training/fine_tune_mobilenetv3_kaggle.ipynb`](../training/fine_tune_mobilenetv3_kaggle.ipynb)
+is the reproducible free-Kaggle fine-tuning path for a pretrained
+MobileNetV3-Small classifier. It has no outputs checked in, makes no benchmark
+claim, and must not be used to pick an operating threshold. It only fits on
+`train`, selects a checkpoint by validation AUROC, and deliberately never
+opens the held-out `test` records.
+
+Before a run, make three immutable Kaggle inputs:
+
+1. A read-only repository snapshot named for the exact Git revision.
+2. A private record dataset containing a record manifest and the referenced
+   portrait files.
+3. A read-only copy of the official
+   `MobileNet_V3_Small_Weights.IMAGENET1K_V1` checkpoint.
+
+The notebook requires the canonical SHA-256 of the private record manifest
+(as computed by the command below) and a full byte-level SHA-256 for the
+pretrained checkpoint, then verifies every image byte before importing
+PyTorch. Once the immutable inputs are attached, Internet access can remain
+off. It records the source revision, digests, package versions, fixed seed,
+preprocessing, optimiser parameters, and selected epoch in private
+`run-metadata.json` output.
+
+```sh
+python3 training/fine_tune.py --record-manifest /private/path/portrait-records-v1.json
+```
+
+The private record manifest is a JSON object with this top-level shape:
+
+```json
+{
+  "schema_version": "1.0",
+  "manifest_version": "private-portrait-records-…",
+  "source_manifest_sha256": "sha256:…",
+  "split_manifest_sha256": "sha256:…",
+  "records": []
+}
+```
+
+Each record must include `record_id`, a safe image `relative_path`, its image
+`sha256`, `label`, `source_id`, and `split`. Camera-origin records must retain
+the reviewed source fields—including attribution, licence, subject group, and
+capture group. Synthetic records must retain their exact generator model,
+revision, family, prompt-template identifier, seed, and `output_sha256`.
+`training/fine_tune.py` rejects a label/source mismatch, a synthetic generator
+that differs from the catalog, duplicate content, a group that crosses splits,
+or a digest mismatch. The manifest, image paths, outputs, state dictionaries,
+and checkpoints are private training artifacts and remain excluded from Git.
