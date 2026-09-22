@@ -27,7 +27,7 @@
 - [x] Curate licensed real and fully synthetic portrait dataset manifests with generator-family-aware train/validation/test splits. Verified with 4 training-manifest tests, `python3 training/validate_manifests.py`, and the root quality gate.
 - [x] Add reproducible free-Kaggle fine-tuning notebook for a pretrained lightweight backbone. Verified with 14 training tests, JSON validation, and the root quality gate.
 - [x] Export the selected model to ONNX with a model card, license, checksums, and reproducible threshold configuration. Verified with 19 training tests, including release provenance and policy-artifact validation, and the root quality gate.
-- [ ] Build benchmark runner for held-out sources and transformations: JPEG, resize, crop, filters, profile pose, blur, and occlusion.
+- [x] Build benchmark runner for held-out sources and transformations: JPEG, resize, crop, filters, profile pose, blur, and occlusion. Verified with 27 training tests (including temporary-image transformations) and the root quality gate.
 - [ ] Publish metrics, calibration plots, error analysis, model limitations, and latency comparison against the baseline.
 
 ## Milestone 4 — hardening and delivery

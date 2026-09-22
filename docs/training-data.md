@@ -87,3 +87,11 @@ and checkpoints are private training artifacts and remain excluded from Git.
 After a run selects a checkpoint, use the [private model-release procedure](model-release.md) to create a new, checksummed ONNX release bundle. The exporter binds the output to the completed run metadata and an exact detector-release calibration artifact, produces a model card, and requires an authorized operator to supply the applicable licence text and SPDX identifier. It cannot choose a licence, turn validation AUROC into a threshold, or publish an evaluation claim.
 
 The calibration input must be a separately held-out, licence-reviewed manifest: it must not reuse the examples used for model selection or the later benchmark test split. The exported policy configuration records the API's conservative thresholds and its paired calibration checksum, but missing, invalid, or mismatched calibration still makes a deployed report `inconclusive`.
+
+## Private held-out benchmarking
+
+After release export, evaluate the untouched `test` records with the private
+[benchmark runner](benchmarking.md). It verifies record digests and runs a
+fixed JPEG, resize, crop, filter, blur, occlusion, and annotated-profile-pose
+matrix through the exact release pipeline. It writes only private aggregate
+results and cannot calibrate a detector or select a product threshold.
