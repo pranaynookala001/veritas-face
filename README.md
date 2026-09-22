@@ -48,6 +48,10 @@ The local web experience lets a person select one JPEG, PNG, or WebP portrait up
 
 The C++ inference service provides local liveness (`/health`, `/healthz`), model-readiness (`/v1/model-info`), and CPU ONNX inference (`POST /v1/infer`) for an explicitly configured model. It accepts a fixed primary-face crop, converts RGB/HWC uint8 bytes to normalized float32 NCHW input, and reports the model score as probabilistic detector evidence. A process without `--model` remains deliberately `unavailable`; a healthy process is not an authenticity result. Its HTTP contract and local launch options are documented in [the API contract](docs/api-contract.md#c-inference-service).
 
+## Training-data governance
+
+The repository contains a reviewed, licence-aware source catalog and a generator-family-disjoint split plan, not portrait data or model weights. Camera-origin records require per-file licence and attribution verification; fully synthetic records must be text-to-image-only and retain a pinned generator revision plus a private output hash. Raw images, face crops, prompts, seeds, materialized manifests, and checkpoints stay out of Git. See [training-data governance](docs/training-data.md) and [the manifest guide](training/manifests/README.md).
+
 ## Local prerequisites
 
 - Node.js 20+

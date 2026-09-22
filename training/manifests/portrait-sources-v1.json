@@ -1,0 +1,124 @@
+{
+  "schema_version": "1.0",
+  "manifest_version": "portrait-sources-2026.09.1",
+  "reviewed_on": "2026-09-22",
+  "sources": [
+    {
+      "id": "wikimedia-commons-cc-portrait-photographs",
+      "label": "camera_origin",
+      "asset_origin": "public_photograph",
+      "catalog_url": "https://commons.wikimedia.org/wiki/Category:Portrait_photographs_of_people",
+      "license": {
+        "kind": "per_asset",
+        "allowed_spdx": [
+          "CC-BY-4.0",
+          "CC-BY-SA-4.0"
+        ],
+        "terms_url": "https://commons.wikimedia.org/wiki/Commons:Reusing_content_outside_Wikimedia",
+        "reviewed_on": "2026-09-22"
+      },
+      "record_requirements": [
+        "commons_file_page_url",
+        "source_file_sha1",
+        "license_spdx",
+        "attribution",
+        "subject_group_id",
+        "capture_group_id"
+      ],
+      "split_group": "subject_group_id",
+      "selection_constraints": [
+        "Use only a camera-origin portrait with one dominant human face.",
+        "Verify the displayed file-level licence is one of allowed_spdx before acquisition.",
+        "Keep every subject_group_id and capture_group_id in exactly one split.",
+        "Do not use images of minors, sensitive contexts, or images with unresolved consent or privacy concerns."
+      ]
+    },
+    {
+      "id": "stable-diffusion-v1-5-text-to-image",
+      "label": "fully_synthetic",
+      "asset_origin": "text_to_image_generation",
+      "catalog_url": "https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/tree/451f4fe16113bff5a5d2269ed5ad43b0592e9a14",
+      "license": {
+        "spdx": "creativeml-openrail-m",
+        "terms_url": "https://huggingface.co/spaces/CompVis/stable-diffusion-license",
+        "reviewed_on": "2026-09-22"
+      },
+      "generator": {
+        "family": "latent_diffusion",
+        "model_id": "stable-diffusion-v1-5/stable-diffusion-v1-5",
+        "revision": "451f4fe16113bff5a5d2269ed5ad43b0592e9a14",
+        "mode": "text_to_image",
+        "identity_reference_allowed": false,
+        "image_conditioning_allowed": false,
+        "prompt_log_required": true,
+        "seed_log_required": true
+      },
+      "record_requirements": [
+        "generator_model_id",
+        "generator_revision",
+        "generator_family",
+        "prompt_template_id",
+        "seed",
+        "output_sha256"
+      ]
+    },
+    {
+      "id": "flux-1-schnell-text-to-image",
+      "label": "fully_synthetic",
+      "asset_origin": "text_to_image_generation",
+      "catalog_url": "https://huggingface.co/black-forest-labs/FLUX.1-schnell/tree/741f7c3ce8b383c54771c7003378a50191e9efe9",
+      "license": {
+        "spdx": "Apache-2.0",
+        "terms_url": "https://www.apache.org/licenses/LICENSE-2.0",
+        "reviewed_on": "2026-09-22"
+      },
+      "generator": {
+        "family": "rectified_flow",
+        "model_id": "black-forest-labs/FLUX.1-schnell",
+        "revision": "741f7c3ce8b383c54771c7003378a50191e9efe9",
+        "mode": "text_to_image",
+        "identity_reference_allowed": false,
+        "image_conditioning_allowed": false,
+        "prompt_log_required": true,
+        "seed_log_required": true
+      },
+      "record_requirements": [
+        "generator_model_id",
+        "generator_revision",
+        "generator_family",
+        "prompt_template_id",
+        "seed",
+        "output_sha256"
+      ]
+    },
+    {
+      "id": "stable-diffusion-xl-base-1-0-text-to-image",
+      "label": "fully_synthetic",
+      "asset_origin": "text_to_image_generation",
+      "catalog_url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/tree/462165984030d82259a11f4367a4eed129e94a7b",
+      "license": {
+        "spdx": "openrail++",
+        "terms_url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/blob/462165984030d82259a11f4367a4eed129e94a7b/LICENSE.md",
+        "reviewed_on": "2026-09-22"
+      },
+      "generator": {
+        "family": "latent_diffusion_xl",
+        "model_id": "stabilityai/stable-diffusion-xl-base-1.0",
+        "revision": "462165984030d82259a11f4367a4eed129e94a7b",
+        "mode": "text_to_image",
+        "identity_reference_allowed": false,
+        "image_conditioning_allowed": false,
+        "prompt_log_required": true,
+        "seed_log_required": true
+      },
+      "record_requirements": [
+        "generator_model_id",
+        "generator_revision",
+        "generator_family",
+        "prompt_template_id",
+        "seed",
+        "output_sha256"
+      ]
+    }
+  ]
+}

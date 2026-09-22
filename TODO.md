@@ -24,7 +24,7 @@
 
 ## Milestone 3 — training and evaluation
 
-- [ ] Curate licensed real and fully synthetic portrait dataset manifests with generator-family-aware train/validation/test splits.
+- [x] Curate licensed real and fully synthetic portrait dataset manifests with generator-family-aware train/validation/test splits. Verified with 4 training-manifest tests, `python3 training/validate_manifests.py`, and the root quality gate.
 - [ ] Add reproducible free-Kaggle fine-tuning notebook for a pretrained lightweight backbone.
 - [ ] Export the selected model to ONNX with a model card, license, checksums, and reproducible threshold configuration.
 - [ ] Build benchmark runner for held-out sources and transformations: JPEG, resize, crop, filters, profile pose, blur, and occlusion.

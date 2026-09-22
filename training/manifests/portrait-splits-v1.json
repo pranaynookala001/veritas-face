@@ -1,0 +1,39 @@
+{
+  "schema_version": "1.0",
+  "manifest_version": "portrait-splits-2026.09.1",
+  "source_manifest": "portrait-sources-v1.json",
+  "splits": {
+    "train": {
+      "purpose": "fit model parameters",
+      "source_ids": [
+        "wikimedia-commons-cc-portrait-photographs",
+        "stable-diffusion-v1-5-text-to-image"
+      ]
+    },
+    "validation": {
+      "purpose": "select hyperparameters and calibrate only after a separate held-out calibration partition is declared",
+      "source_ids": [
+        "wikimedia-commons-cc-portrait-photographs",
+        "flux-1-schnell-text-to-image"
+      ]
+    },
+    "test": {
+      "purpose": "final held-out reporting only",
+      "source_ids": [
+        "wikimedia-commons-cc-portrait-photographs",
+        "stable-diffusion-xl-base-1-0-text-to-image"
+      ]
+    }
+  },
+  "constraints": {
+    "required_labels_per_split": [
+      "camera_origin",
+      "fully_synthetic"
+    ],
+    "identity_groups_must_be_disjoint": true,
+    "capture_groups_must_be_disjoint": true,
+    "synthetic_generator_families_must_be_split_disjoint": true,
+    "synthetic_records_must_be_text_to_image_only": true,
+    "raw_artifacts_committed_to_git": false
+  }
+}

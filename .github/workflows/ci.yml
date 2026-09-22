@@ -30,6 +30,10 @@ jobs:
         run: npm run check:manifest
       - name: Run API contract tests
         run: npm run test:api
+      - name: Run training-manifest tests
+        run: npm run test:training
+      - name: Validate training manifests
+        run: npm run check:training
       - name: Run C++ inference contract tests
         run: npm run check:inference
       - name: Run web validation tests

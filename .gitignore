@@ -22,6 +22,8 @@ artifacts/
 data/
 models/*.onnx
 models/*.pt
+training/data/
+training/outputs/
 *.pem
 *.key
 
