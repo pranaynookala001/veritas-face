@@ -81,3 +81,9 @@ revision, family, prompt-template identifier, seed, and `output_sha256`.
 that differs from the catalog, duplicate content, a group that crosses splits,
 or a digest mismatch. The manifest, image paths, outputs, state dictionaries,
 and checkpoints are private training artifacts and remain excluded from Git.
+
+## Private model releases
+
+After a run selects a checkpoint, use the [private model-release procedure](model-release.md) to create a new, checksummed ONNX release bundle. The exporter binds the output to the completed run metadata and an exact detector-release calibration artifact, produces a model card, and requires an authorized operator to supply the applicable licence text and SPDX identifier. It cannot choose a licence, turn validation AUROC into a threshold, or publish an evaluation claim.
+
+The calibration input must be a separately held-out, licence-reviewed manifest: it must not reuse the examples used for model selection or the later benchmark test split. The exported policy configuration records the API's conservative thresholds and its paired calibration checksum, but missing, invalid, or mismatched calibration still makes a deployed report `inconclusive`.
