@@ -18,7 +18,7 @@ from app.calibration import calibration_registry_from_mapping
 from app.domain import JobStatus, Report, Verdict
 from app.face_quality import FaceAssessment, FaceQualityMetrics, FaceRectangle
 from app.intake import MAX_UPLOAD_BYTES
-from app.main import APP_VERSION, app, get_job_store, process_local_job
+from app.main import APP_VERSION, app, configured_job_store, get_job_store, process_local_job
 from app.storage import JobExpiredError, JobStateError, StoredArtifact, TemporaryJobStore
 
 
@@ -89,6 +89,24 @@ class ApiTests(unittest.TestCase):
             response.json(),
             {"status": "ok", "service": "veritas-face-api", "version": APP_VERSION},
         )
+
+    def test_configured_artifact_directory_uses_the_private_operator_mount(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            artifact_directory = Path(temporary_directory) / "private-artifacts"
+            with patch.dict(
+                "os.environ",
+                {"VERITAS_FACE_ARTIFACT_DIRECTORY": str(artifact_directory)},
+                clear=False,
+            ):
+                configured_store = configured_job_store()
+            try:
+                job = configured_store.create_job(
+                    StoredArtifact(content=b"temporary image", media_type="image/png")
+                )
+                self.assertEqual(artifact_directory, job.artifact_path.parent)
+                self.assertEqual(stat.S_IMODE(job.artifact_path.stat().st_mode), 0o600)
+            finally:
+                configured_store.close()
 
     def test_local_web_origin_may_submit_and_read_job_reports(self) -> None:
         response = self.client.options(

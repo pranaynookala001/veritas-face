@@ -1,0 +1,119 @@
+name: veritas-face
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000}
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000}
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    init: true
+
+  api:
+    build:
+      context: .
+      dockerfile: services/api/Dockerfile
+    environment:
+      VERITAS_ENV: development
+      VERITAS_FACE_ARTIFACT_DIRECTORY: /var/lib/veritas-face/artifacts
+      VERITAS_FACE_WEB_ORIGINS: ${VERITAS_FACE_WEB_ORIGINS:-http://localhost:3000}
+      VERITAS_FACE_INFERENCE_URL: http://inference:8080
+      VERITAS_FACE_CALIBRATION_PATH: ${VERITAS_FACE_CALIBRATION_PATH:-}
+      DATABASE_URL: postgresql://veritas:${VERITAS_POSTGRES_PASSWORD:-veritas-local-development-only}@postgres:5432/veritas
+      REDIS_URL: redis://redis:6379/0
+      S3_ENDPOINT_URL: http://object-storage:9000
+    depends_on:
+      inference:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      object-storage:
+        condition: service_started
+    ports:
+      - "${API_PORT:-8000}:8000"
+    volumes:
+      - temporary-artifacts:/var/lib/veritas-face/artifacts
+      - ./calibration:/calibration:ro
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=2)"
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+    init: true
+
+  inference:
+    platform: linux/amd64
+    build:
+      context: .
+      dockerfile: services/inference/Dockerfile
+    environment:
+      VERITAS_INFERENCE_MODEL: ${VERITAS_INFERENCE_MODEL:-}
+      VERITAS_INFERENCE_MODEL_VERSION: ${VERITAS_INFERENCE_MODEL_VERSION:-}
+      VERITAS_INFERENCE_MODEL_ID: ${VERITAS_INFERENCE_MODEL_ID:-synthetic-portrait-classifier}
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        if [ -n "$${VERITAS_INFERENCE_MODEL}" ]; then
+          test -n "$${VERITAS_INFERENCE_MODEL_VERSION}"
+          exec veritas-inference --model "$${VERITAS_INFERENCE_MODEL}" --model-version "$${VERITAS_INFERENCE_MODEL_VERSION}" --model-id "$${VERITAS_INFERENCE_MODEL_ID}" --host 0.0.0.0 --port 8080
+        fi
+        exec veritas-inference --host 0.0.0.0 --port 8080
+    volumes:
+      - ./models:/models:ro
+    expose:
+      - "8080"
+    init: true
+
+  postgres:
+    image: postgres:17.2-alpine
+    environment:
+      POSTGRES_DB: veritas
+      POSTGRES_USER: veritas
+      POSTGRES_PASSWORD: ${VERITAS_POSTGRES_PASSWORD:-veritas-local-development-only}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready --username=veritas --dbname=veritas"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  redis:
+    image: redis:7.4.2-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  object-storage:
+    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+    command: ["server", "/data"]
+    environment:
+      MINIO_ROOT_USER: ${VERITAS_MINIO_ROOT_USER:-veritas-local}
+      MINIO_ROOT_PASSWORD: ${VERITAS_MINIO_ROOT_PASSWORD:-veritas-local-development-only}
+    tmpfs:
+      - /data
+    expose:
+      - "9000"
+    init: true
+
+volumes:
+  temporary-artifacts:
+  postgres-data:

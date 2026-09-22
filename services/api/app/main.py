@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 import os
+from pathlib import Path
 from typing import Annotated
 from uuid import UUID
 
@@ -38,7 +39,23 @@ from .storage import JobExpiredError, JobStateError, StoredArtifact, TemporaryJo
 
 APP_VERSION = "0.1.0"
 JOB_RETENTION = timedelta(hours=24)
-job_store = TemporaryJobStore(JOB_RETENTION)
+
+
+def configured_job_store() -> TemporaryJobStore:
+    """Create temporary storage, optionally at an operator-provided private mount.
+
+    Containers can mount an owner-only volume at this path so accepted uploads
+    survive an in-process background task without becoming part of the image.
+    An empty setting deliberately retains the safe OS-managed temporary directory
+    used by local development and unit tests.
+    """
+    configured_directory = os.getenv("VERITAS_FACE_ARTIFACT_DIRECTORY", "").strip()
+    if configured_directory:
+        return TemporaryJobStore(JOB_RETENTION, directory=Path(configured_directory))
+    return TemporaryJobStore(JOB_RETENTION)
+
+
+job_store = configured_job_store()
 _inference_service_url = os.getenv("VERITAS_FACE_INFERENCE_URL", "").strip()
 baseline_detector: BaselineDetector | None = (
     OnnxInferenceBaselineDetector(_inference_service_url) if _inference_service_url else None

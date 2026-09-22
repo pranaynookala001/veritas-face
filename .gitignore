@@ -22,6 +22,7 @@ artifacts/
 data/
 models/*.onnx
 models/*.pt
+calibration/
 training/data/
 training/outputs/
 *.pem
