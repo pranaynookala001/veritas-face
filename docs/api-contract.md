@@ -52,8 +52,8 @@ Once the local worker completes, the same resource also includes a report:
   "status": "completed",
   "expires_at": "2026-09-13T23:00:00Z",
   "report": {
-    "report_version": "local-evidence-v3",
-    "calibration_version": "not_calibrated_v1",
+    "report_version": "local-evidence-v4",
+    "calibration_version": "not_available",
     "verdict": "inconclusive",
     "confidence": null,
     "reasons": ["no_face_detected"],
@@ -81,6 +81,12 @@ Once the local worker completes, the same resource also includes a report:
         "status": "skipped",
         "detail": "The baseline detector was not run because face-quality gates require an inconclusive result.",
         "version": "1.0"
+      },
+      {
+        "source": "detector_calibration",
+        "status": "skipped",
+        "detail": "Calibration was not evaluated because no usable detector probability was available.",
+        "version": "not_available"
       }
     ],
     "model_versions": {
@@ -123,7 +129,8 @@ Error codes include `empty_upload` (400), `upload_too_large` (413), `unsupported
 - `inconclusive` includes at least one quality or evidence reason.
 - Detector and provenance evidence retain source/version/status details.
 - No raw image, facial embedding, original filename, embedded metadata value, C2PA manifest content, or signer identity appears in a report.
-- Every report includes report and calibration version identifiers. The current local evidence report uses `not_calibrated_v1`; even a valid detector score remains evidence until calibration and disagreement policy are available.
+- Every report includes report and calibration version identifiers. `not_available` means no validated artifact was applied; a detector score then remains evidence and cannot determine a verdict.
+- A non-null `confidence` is the calibrated detector-family consensus synthetic-portrait probability supporting a `likely_*` verdict. It is probabilistic evidence, not certainty or proof of origin.
 
 ## Local browser connection
 
@@ -135,7 +142,35 @@ The local worker extracts presence-only EXIF/XMP facts and verifies embedded C2P
 
 Set `VERITAS_FACE_INFERENCE_URL` to the base URL of the local C++ inference service (for example, `http://127.0.0.1:8080`) to enable the baseline detector. Without that opt-in setting, no portrait bytes leave the API worker and the detector evidence is reported as `unavailable`. The adapter runs only after one primary face has passed every quality gate. It crops that face in memory, converts it to RGB/HWC, resizes it to 224 × 224 pixels, and sends it to `POST /v1/infer`; neither the crop nor the service response body is retained in the completed report.
 
-For a `200` response, the adapter accepts a score only when `synthetic_probability` is a finite number from 0 through 1 inclusive, `latency_ms` is a finite non-negative number, and `detector.id` plus `detector.version` are non-empty strings. A valid result appears as `baseline_synthetic_detector` evidence with the score, reported inference latency, and model version; `model_versions.baseline_detector` is `id@version`. A `503` model response or connection failure is `unavailable`; a malformed successful response or unexpected status is `invalid_response`. These outcomes always keep the report `inconclusive`. The current adapter deliberately does not turn a score into a verdict: its probability is uncalibrated and awaits the calibration and detector-disagreement policy.
+For a `200` response, the adapter accepts a score only when `synthetic_probability` is a finite number from 0 through 1 inclusive, `latency_ms` is a finite non-negative number, and `detector.id` plus `detector.version` are non-empty strings. A valid result appears as `baseline_synthetic_detector` evidence with the raw score, reported inference latency, and model version; `model_versions.baseline_detector` is `id@version`. A `503` model response or connection failure is `unavailable`; a malformed successful response or unexpected status is `invalid_response`. These outcomes always keep the report `inconclusive`.
+
+## Calibration and final verdict policy
+
+Set `VERITAS_FACE_CALIBRATION_PATH` to a local JSON artifact only after a calibration run has produced it from a held-out, licensed portrait manifest. The artifact is bounded to 256 KiB and must use this exact schema; its manifest checksum is an audit link, not a claim that the API has inspected the underlying portraits.
+
+```json
+{
+  "schema_version": "1.0",
+  "calibration_version": "heldout-portraits-2026.09",
+  "validation_manifest_sha256": "sha256:<64 lowercase hexadecimal characters>",
+  "detectors": [
+    {
+      "id": "synthetic-portrait-classifier",
+      "version": "model-release-id",
+      "family": "classifier-family-id",
+      "points": [
+        {"raw_probability": 0.0, "calibrated_probability": 0.01},
+        {"raw_probability": 0.5, "calibrated_probability": 0.48},
+        {"raw_probability": 1.0, "calibrated_probability": 0.99}
+      ]
+    }
+  ]
+}
+```
+
+Each detector release must appear once. Its calibration curve must cover 0 through 1, use strictly increasing raw probabilities, and never decrease calibrated probabilities. The API applies only an exact `id` plus `version` match; a missing, unreadable, invalid, or mismatched artifact leaves the report `inconclusive` and returns calibrated-evidence status explaining why. A successful transformation appears as `detector_calibration` evidence with the calibration version and calibrated probability, never the calibration path or manifest contents.
+
+Face-quality failure always overrides score policy. For usable portraits, the policy averages releases within each detector `family`, then averages the independent family scores. A consensus at least `0.85` returns `likely_synthetic`; a consensus at most `0.15` returns `likely_authentic`; intermediate consensus is `inconclusive`. When at least two independent families are available and their family scores differ by `0.20` or more, the report is `inconclusive` with `meaningful_detector_disagreement`, regardless of the average. A single calibrated family can inform a probabilistic verdict, but it does not establish origin; C2PA and metadata facts are never inputs to these thresholds.
 
 ## C++ inference service
 

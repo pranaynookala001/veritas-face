@@ -14,6 +14,7 @@ from PIL import Image
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.baseline_detector import BaselineDetectorResult, BaselineDetectorStatus
+from app.calibration import calibration_registry_from_mapping
 from app.domain import JobStatus, Report, Verdict
 from app.face_quality import FaceAssessment, FaceQualityMetrics, FaceRectangle
 from app.intake import MAX_UPLOAD_BYTES
@@ -136,8 +137,8 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(payload["status"], "completed")
         self.assertEqual(payload["report"]["verdict"], "inconclusive")
         self.assertIsNone(payload["report"]["confidence"])
-        self.assertEqual(payload["report"]["report_version"], "local-evidence-v3")
-        self.assertEqual(payload["report"]["calibration_version"], "not_calibrated_v1")
+        self.assertEqual(payload["report"]["report_version"], "local-evidence-v4")
+        self.assertEqual(payload["report"]["calibration_version"], "not_available")
         self.assertIn("no_face_detected", payload["report"]["reasons"])
         self.assertEqual(
             [item["source"] for item in payload["report"]["evidence"]],
@@ -146,6 +147,7 @@ class ApiTests(unittest.TestCase):
                 "c2pa_content_credentials",
                 "face_quality",
                 "baseline_synthetic_detector",
+                "detector_calibration",
             ],
         )
         self.assertIn("2 × 2 pixels", payload["report"]["evidence"][0]["detail"])
@@ -154,12 +156,31 @@ class ApiTests(unittest.TestCase):
         self.assertIn("Missing provenance is not evidence", payload["report"]["evidence"][1]["detail"])
         self.assertEqual(payload["report"]["evidence"][3]["status"], "skipped")
         self.assertIn("not run", payload["report"]["evidence"][3]["detail"])
+        self.assertEqual(payload["report"]["evidence"][4]["status"], "skipped")
         self.assertNotIn("private-portrait.png", str(payload))
         self.assertNotIn(image_bytes().decode(errors="ignore"), str(payload))
 
     def test_worker_passes_an_injected_baseline_detector_into_the_completed_report(self) -> None:
         job = self.store.create_job(StoredArtifact(content=image_bytes(), media_type="image/png"))
         detector = FixtureBaselineDetector()
+        calibration = calibration_registry_from_mapping(
+            {
+                "schema_version": "1.0",
+                "calibration_version": "heldout-worker-test-v1",
+                "validation_manifest_sha256": "sha256:" + "c" * 64,
+                "detectors": [
+                    {
+                        "id": "baseline-portrait",
+                        "version": "test-model",
+                        "family": "baseline-cnn",
+                        "points": [
+                            {"raw_probability": 0, "calibrated_probability": 0},
+                            {"raw_probability": 1, "calibrated_probability": 1},
+                        ],
+                    }
+                ],
+            }
+        )
         usable_assessment = FaceAssessment(
             image_width=224,
             image_height=224,
@@ -170,7 +191,7 @@ class ApiTests(unittest.TestCase):
         )
 
         with patch("app.main.assess_encoded_image", return_value=usable_assessment):
-            process_local_job(self.store, job.job_id, detector)
+            process_local_job(self.store, job.job_id, detector, calibration)
 
         completed = self.store.get_job(job.job_id)
         self.assertIsNotNone(completed)
@@ -181,6 +202,8 @@ class ApiTests(unittest.TestCase):
         report = completed.report.as_dict()
         self.assertEqual(detector.calls, 1)
         self.assertEqual(report["evidence"][3]["score"], 0.61)
+        self.assertEqual(report["evidence"][4]["status"], "applied")
+        self.assertEqual(report["calibration_version"], "heldout-worker-test-v1")
         self.assertEqual(report["model_versions"]["baseline_detector"], "baseline-portrait@test-model")
 
     def test_unknown_job_uses_the_error_envelope(self) -> None:

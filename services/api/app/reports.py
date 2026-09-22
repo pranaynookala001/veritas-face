@@ -8,6 +8,14 @@ from .baseline_detector import (
     BaselineDetectorResult,
     BaselineDetectorStatus,
 )
+from .calibration import (
+    CalibrationApplication,
+    CalibrationRegistry,
+    CalibrationStatus,
+    VerdictDecision,
+    apply_calibration,
+    decide_final_verdict,
+)
 from .domain import Evidence, Report, Verdict
 from .face_quality import FaceAssessment
 from .provenance import (
@@ -20,8 +28,7 @@ from .provenance import (
 from .storage import StoredArtifact
 
 
-REPORT_VERSION = "local-evidence-v3"
-CALIBRATION_VERSION = "not_calibrated_v1"
+REPORT_VERSION = "local-evidence-v4"
 FACE_QUALITY_VERSION = "1.0"
 
 
@@ -31,12 +38,14 @@ def build_local_report(
     *,
     c2pa_verifier: C2paVerifier | None = None,
     baseline_detector: BaselineDetector | None = None,
+    calibration_registry: CalibrationRegistry | None = None,
 ) -> Report:
-    """Build an explicitly inconclusive report from local eligibility and evidence.
+    """Build a report from local eligibility and explicitly versioned evidence.
 
     A verified credential only attests to declared provenance. A validated detector
-    score remains uncalibrated until the calibration policy is applied, so it is
-    preserved as evidence rather than converted into an authenticity claim.
+    score is preserved as evidence until an exact detector-release calibration is
+    available. The final policy remains probabilistic and never treats metadata or
+    provenance absence as evidence of either origin.
     """
     provenance = inspect_provenance(
         artifact.content,
@@ -44,7 +53,8 @@ def build_local_report(
         c2pa_verifier=c2pa_verifier,
     )
     detector_result = _detector_result(artifact, assessment, baseline_detector)
-    reasons = assessment.inconclusive_reasons or _detector_reasons(detector_result)
+    calibration = apply_calibration(detector_result, calibration_registry)
+    decision = _final_decision(assessment, detector_result, calibration)
     quality_status = "inconclusive" if assessment.inconclusive_reasons else "passed"
     quality_detail = (
         "Face-quality gates require an inconclusive result: "
@@ -73,6 +83,7 @@ def build_local_report(
             version=FACE_QUALITY_VERSION,
         ),
         _detector_evidence(detector_result),
+        _calibration_evidence(calibration),
     )
     model_versions = {
         "baseline_detector_adapter": BASELINE_ADAPTER_VERSION,
@@ -86,13 +97,15 @@ def build_local_report(
         model_versions["baseline_detector"] = (
             f"{detector_result.detector_id}@{detector_result.detector_version}"
         )
+    if calibration_registry is not None:
+        model_versions["detector_calibration"] = calibration_registry.calibration_version
 
     return Report(
         report_version=REPORT_VERSION,
-        calibration_version=CALIBRATION_VERSION,
-        verdict=Verdict.INCONCLUSIVE,
-        confidence=None,
-        reasons=reasons,
+        calibration_version=calibration.calibration_version,
+        verdict=decision.verdict,
+        confidence=decision.confidence,
+        reasons=decision.reasons,
         evidence=evidence,
         model_versions=model_versions,
     )
@@ -115,11 +128,34 @@ def _detector_result(
 
 
 def _detector_reasons(result: BaselineDetectorResult) -> tuple[str, ...]:
-    if result.status is BaselineDetectorStatus.AVAILABLE:
-        return ("detector_score_uncalibrated",)
     if result.status is BaselineDetectorStatus.INVALID_RESPONSE:
         return ("baseline_detector_response_invalid",)
     return ("baseline_detector_unavailable",)
+
+
+def _final_decision(
+    assessment: FaceAssessment,
+    detector_result: BaselineDetectorResult,
+    calibration: CalibrationApplication,
+) -> VerdictDecision:
+    """Keep quality failures and unavailable evidence ahead of score policy."""
+    if assessment.inconclusive_reasons:
+        return VerdictDecision(Verdict.INCONCLUSIVE, None, assessment.inconclusive_reasons)
+    if detector_result.status is not BaselineDetectorStatus.AVAILABLE:
+        return VerdictDecision(Verdict.INCONCLUSIVE, None, _detector_reasons(detector_result))
+    if calibration.status is CalibrationStatus.NOT_CONFIGURED:
+        return VerdictDecision(
+            Verdict.INCONCLUSIVE,
+            None,
+            ("detector_calibration_not_configured",),
+        )
+    if calibration.status is not CalibrationStatus.APPLIED or calibration.score is None:
+        return VerdictDecision(
+            Verdict.INCONCLUSIVE,
+            None,
+            ("detector_calibration_not_applicable",),
+        )
+    return decide_final_verdict((calibration.score,))
 
 
 def _detector_evidence(result: BaselineDetectorResult) -> Evidence:
@@ -134,7 +170,7 @@ def _detector_evidence(result: BaselineDetectorResult) -> Evidence:
             version=result.detector_version,
             detail=(
                 f"The baseline detector returned a {result.score:.3f} synthetic-portrait probability "
-                f"in {result.latency_ms:.3f} ms. This uncalibrated probability is detector evidence, "
+                f"in {result.latency_ms:.3f} ms. This raw probability is detector evidence, "
                 "not an authenticity verdict."
             ),
         )
@@ -155,4 +191,43 @@ def _detector_evidence(result: BaselineDetectorResult) -> Evidence:
         status=result.status.value,
         detail=detail,
         version=BASELINE_ADAPTER_VERSION,
+    )
+
+
+def _calibration_evidence(calibration: CalibrationApplication) -> Evidence:
+    """Expose policy readiness without exposing deployment paths or calibration data."""
+    if calibration.status is CalibrationStatus.APPLIED:
+        assert calibration.score is not None
+        score = calibration.score
+        return Evidence(
+            source="detector_calibration",
+            status=calibration.status.value,
+            score=score.calibrated_probability,
+            version=calibration.calibration_version,
+            detail=(
+                f"Calibration {calibration.calibration_version} transformed the "
+                f"{score.detector_id}@{score.detector_version} raw synthetic probability "
+                f"from {score.raw_probability:.3f} to {score.calibrated_probability:.3f}. "
+                "The result is probabilistic evidence, not proof of origin."
+            ),
+        )
+    if calibration.status is CalibrationStatus.NOT_CONFIGURED:
+        detail = (
+            "No validated calibration artifact is configured for detector evidence, "
+            "so a raw detector probability cannot determine a verdict."
+        )
+    elif calibration.status is CalibrationStatus.NOT_APPLICABLE:
+        detail = (
+            "The configured calibration artifact does not apply to this exact detector release, "
+            "so a raw detector probability cannot determine a verdict."
+        )
+    else:
+        detail = (
+            "Calibration was not evaluated because no usable detector probability was available."
+        )
+    return Evidence(
+        source="detector_calibration",
+        status=calibration.status.value,
+        detail=detail,
+        version=calibration.calibration_version,
     )

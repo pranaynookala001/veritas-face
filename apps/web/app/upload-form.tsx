@@ -75,7 +75,7 @@ export function UploadForm() {
       setReport(completedReport);
       setNotice({
         kind: "success",
-        message: "The local evidence report is ready. Any detector probability remains uncalibrated evidence, not a conclusion.",
+        message: reportNotice(completedReport.verdict),
       });
     } catch (error) {
       setNotice({
@@ -166,17 +166,25 @@ export function UploadForm() {
 }
 
 function EvidenceReportPanel({ report }: { report: EvidenceReport }) {
+  const isInconclusive = report.verdict === "inconclusive";
   return (
     <section className="report-panel" aria-labelledby="report-heading">
       <p className="eyebrow">COMPLETED LOCAL EVIDENCE REPORT</p>
       <h2 id="report-heading">Assessment: {formatVerdict(report.verdict)}</h2>
       <p className="report-panel__summary">
-        This is a local eligibility report, not a proof of origin. It remains inconclusive until
-        calibration and detector-agreement policy can interpret its evidence safely.
+        {isInconclusive
+          ? "This report is inconclusive because its available evidence does not support a safe probabilistic assessment."
+          : "This is a probabilistic assessment from calibrated detector evidence, not proof of origin."}
       </p>
 
+      {report.confidence !== null ? (
+        <p className="report-panel__summary">
+          Calibrated detector consensus: {Math.round(report.confidence * 100)}% synthetic-portrait probability.
+        </p>
+      ) : null}
+
       <div className="report-panel__section">
-        <h3>Why the assessment is inconclusive</h3>
+        <h3>{isInconclusive ? "Why the assessment is inconclusive" : "Why this assessment was returned"}</h3>
         <ul className="reason-list">
           {report.reasons.map((reason) => <li key={reason}>{formatReason(reason)}</li>)}
         </ul>
@@ -215,9 +223,21 @@ function formatReason(reason: string) {
     face_too_bright: "The selected face is too bright for a meaningful assessment.",
     baseline_detector_unavailable: "The baseline synthetic-portrait detector could not provide a score.",
     baseline_detector_response_invalid: "The baseline synthetic-portrait detector returned invalid evidence.",
-    detector_score_uncalibrated: "The detector score is available but has not yet been calibrated into a verdict.",
+    detector_calibration_not_configured: "The detector score is available, but no validated calibration artifact is configured for it.",
+    detector_calibration_not_applicable: "The configured calibration does not match this exact detector release.",
+    calibrated_synthetic_evidence: "Calibrated detector evidence crossed the synthetic-portrait policy threshold.",
+    calibrated_authentic_evidence: "Calibrated detector evidence crossed the camera-origin likelihood policy threshold.",
+    calibrated_detector_evidence_not_decisive: "Calibrated detector evidence falls between the policy thresholds.",
+    meaningful_detector_disagreement: "Independent detector families differ enough that no assessment is safe.",
   };
   return labels[reason] ?? formatLabel(reason);
+}
+
+function reportNotice(verdict: EvidenceReport["verdict"]) {
+  if (verdict === "inconclusive") {
+    return "The local evidence report is ready. Its evidence does not support a safe probabilistic assessment.";
+  }
+  return "The local evidence report is ready. Its assessment is probabilistic evidence, not proof of origin.";
 }
 
 function formatLabel(value: string) {
