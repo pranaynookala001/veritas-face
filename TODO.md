@@ -33,6 +33,6 @@
 ## Milestone 4 — hardening and delivery
 
 - [x] Add Docker Compose for web, API/worker, inference, Redis, Postgres, and temporary object storage. Verified with API storage-mount tests, Compose manifest parsing, and the root quality gate.
-- [ ] Add rate/size limits, security headers, structured logs, health/readiness checks, and end-to-end tests.
+- [x] Add rate/size limits, security headers, structured logs, health/readiness checks, and end-to-end tests. Verified with 53 API tests, Compose manifest parsing, and the root quality gate.
 - [ ] Deploy the public CPU demo within free-tier limits; document cold-start and quota behavior.
 - [ ] Complete the portfolio README, architecture diagram, setup guide, demo screenshots/video, and pull request to `main`.

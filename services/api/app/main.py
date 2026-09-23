@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from datetime import timedelta
+import json
+import logging
 import os
 from pathlib import Path
 from typing import Annotated
@@ -22,7 +24,8 @@ from .calibration import (
 )
 from .domain import Report
 from .face_quality import assess_encoded_image
-from .intake import UploadValidationError, validate_upload
+from .hardening import FixedWindowRateLimiter, PublicApiHardeningMiddleware
+from .intake import MAX_UPLOAD_REQUEST_BYTES, UploadValidationError, validate_upload
 from .schemas import (
     ErrorBody,
     ErrorResponse,
@@ -39,6 +42,25 @@ from .storage import JobExpiredError, JobStateError, StoredArtifact, TemporaryJo
 
 APP_VERSION = "0.1.0"
 JOB_RETENTION = timedelta(hours=24)
+LOGGER = logging.getLogger("veritas_face.api")
+
+
+def _positive_integer_setting(name: str, default: int) -> int:
+    """Read an explicit positive integer setting without silently weakening limits."""
+    raw_value = os.getenv(name, "").strip()
+    if not raw_value:
+        return default
+    try:
+        value = int(raw_value)
+    except ValueError as exc:
+        raise RuntimeError(f"{name} must be a positive integer") from exc
+    if value < 1:
+        raise RuntimeError(f"{name} must be a positive integer")
+    return value
+
+
+UPLOAD_RATE_LIMIT = _positive_integer_setting("VERITAS_FACE_UPLOAD_RATE_LIMIT", 30)
+UPLOAD_RATE_WINDOW_SECONDS = _positive_integer_setting("VERITAS_FACE_UPLOAD_RATE_WINDOW_SECONDS", 60)
 
 
 def configured_job_store() -> TemporaryJobStore:
@@ -79,6 +101,11 @@ app = FastAPI(
     version=APP_VERSION,
     description="Validated temporary intake, local quality checks, and evidence reports for synthetic portrait analysis.",
 )
+app.state.max_upload_request_bytes = MAX_UPLOAD_REQUEST_BYTES
+app.state.upload_rate_limiter = FixedWindowRateLimiter(
+    limit=UPLOAD_RATE_LIMIT,
+    window_seconds=UPLOAD_RATE_WINDOW_SECONDS,
+)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=list(WEB_ORIGINS),
@@ -86,6 +113,7 @@ app.add_middleware(
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
+app.add_middleware(PublicApiHardeningMiddleware)
 
 
 def error_response(
@@ -135,6 +163,16 @@ def process_local_job(
     except (JobExpiredError, JobStateError):
         return
     except Exception:
+        LOGGER.warning(
+            json.dumps(
+                {
+                    "event": "job_processing_failed",
+                    "job_id": str(job_id),
+                },
+                separators=(",", ":"),
+                sort_keys=True,
+            )
+        )
         try:
             store.fail_job(job_id)
         except (JobExpiredError, JobStateError):
@@ -190,6 +228,33 @@ async def health() -> HealthResponse:
 async def healthz() -> HealthResponse:
     """Compatibility liveness alias for container platforms."""
     return await health()
+
+
+@app.get(
+    "/ready",
+    response_model=HealthResponse,
+    responses={503: {"model": ErrorResponse}},
+    tags=["health"],
+)
+async def readiness(
+    store: Annotated[TemporaryJobStore, Depends(get_job_store)],
+) -> HealthResponse | JSONResponse:
+    """Report whether this process can safely accept a new temporary artifact."""
+    if store.readiness_error() is not None:
+        return error_response(
+            503,
+            "service_not_ready",
+            "The service is not ready to accept uploads.",
+        )
+    return await health()
+
+
+@app.get("/readyz", response_model=HealthResponse, include_in_schema=False)
+async def readyz(
+    store: Annotated[TemporaryJobStore, Depends(get_job_store)],
+) -> HealthResponse | JSONResponse:
+    """Compatibility readiness alias for container platforms."""
+    return await readiness(store)
 
 
 @app.post(

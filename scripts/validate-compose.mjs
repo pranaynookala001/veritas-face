@@ -22,6 +22,12 @@ if (api.environment?.VERITAS_FACE_ARTIFACT_DIRECTORY !== "/var/lib/veritas-face/
 if (!api.volumes?.includes("temporary-artifacts:/var/lib/veritas-face/artifacts")) {
   throw new Error("API service must mount the temporary artifact volume");
 }
+if (api.environment?.VERITAS_FACE_UPLOAD_RATE_LIMIT !== "${VERITAS_FACE_UPLOAD_RATE_LIMIT:-30}" || api.environment?.VERITAS_FACE_UPLOAD_RATE_WINDOW_SECONDS !== "${VERITAS_FACE_UPLOAD_RATE_WINDOW_SECONDS:-60}") {
+  throw new Error("API service must configure bounded upload-rate defaults");
+}
+if (!api.healthcheck?.test?.some?.((part) => typeof part === "string" && part.includes("/readyz"))) {
+  throw new Error("API health check must use the readiness endpoint");
+}
 if (api.depends_on?.postgres?.condition !== "service_healthy" || api.depends_on?.redis?.condition !== "service_healthy") {
   throw new Error("API service must wait for Redis and Postgres health checks");
 }

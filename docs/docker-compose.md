@@ -25,8 +25,9 @@ docker compose up --build
 ```
 
 Open `http://localhost:3000`. The API is available at
-`http://localhost:8000/healthz`; it waits for its local Postgres and Redis
-dependencies before becoming healthy. Stop and remove all local state with:
+`http://localhost:8000/readyz`; it waits for its local Postgres and Redis
+dependencies before becoming healthy, and its probe verifies that the private
+artifact directory is usable. Stop and remove all local state with:
 
 ```sh
 docker compose down -v
@@ -35,6 +36,10 @@ docker compose down -v
 If `WEB_PORT` changes from `3000`, also set `VERITAS_FACE_WEB_ORIGINS` to the
 matching browser origin. `NEXT_PUBLIC_API_BASE_URL` is compiled into the web
 bundle, so changing it requires `docker compose build web` before restarting.
+The API permits 30 upload attempts per direct client every 60 seconds by
+default. Adjust `VERITAS_FACE_UPLOAD_RATE_LIMIT` and
+`VERITAS_FACE_UPLOAD_RATE_WINDOW_SECONDS` together for a local demo; a
+multi-process deployment needs an equivalent shared limit at its trusted edge.
 
 ## Model and calibration inputs
 

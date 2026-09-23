@@ -69,6 +69,21 @@ class TemporaryJobStore:
         else:
             self._directory = directory
             self._directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+            self._directory.chmod(0o700)
+
+    def readiness_error(self) -> str | None:
+        """Return a non-sensitive reason when the private artifact store is unusable."""
+        try:
+            details = self._directory.stat()
+        except OSError:
+            return "artifact_directory_unavailable"
+        if not self._directory.is_dir():
+            return "artifact_directory_unavailable"
+        if details.st_mode & 0o077:
+            return "artifact_directory_permissions_invalid"
+        if not os.access(self._directory, os.W_OK | os.X_OK):
+            return "artifact_directory_unavailable"
+        return None
 
     def create_job(
         self,

@@ -16,6 +16,20 @@ Returns API liveness and the deployed service version:
 
 `GET /healthz` is an equivalent liveness alias for container platforms.
 
+## `GET /ready`
+
+Returns the same versioned response as liveness only when this API process can
+safely create private temporary artifacts. It checks that the artifact
+directory exists, is owner-only, and is writable/searchable by the API
+process. It returns the standard `503 service_not_ready` envelope otherwise.
+`GET /readyz` is the equivalent container-platform alias and is the Compose
+health probe.
+
+Readiness intentionally does not require a configured ONNX model or
+calibration artifact. Those are optional evidence sources; an unavailable
+model or invalid calibration must yield an `inconclusive` report rather than
+make the safe upload/report path unavailable.
+
 ## `POST /v1/jobs`
 
 Accepts one JPEG, PNG, or WebP image. The response is `202 Accepted` with:
@@ -28,7 +42,7 @@ Accepts one JPEG, PNG, or WebP image. The response is `202 Accepted` with:
 }
 ```
 
-Submit the file as `multipart/form-data` with a `portrait` field. Images must be non-empty, at most 10 MiB, and decode as JPEG, PNG, or WebP. When a specific image MIME type is declared, it must match the decoded content; generic `application/octet-stream` is treated as unknown and decoded normally. The receipt deliberately contains neither an original filename nor image bytes.
+Submit the file as `multipart/form-data` with a `portrait` field. Images must be non-empty, at most 10 MiB, and decode as JPEG, PNG, or WebP. The complete upload request is capped at 10 MiB plus 64 KiB of multipart framing, including when the client sends a chunked body; an over-limit request receives `413 request_too_large` before an artifact can be created or analysis can begin. When a specific image MIME type is declared, it must match the decoded content; generic `application/octet-stream` is treated as unknown and decoded normally. The receipt deliberately contains neither an original filename nor image bytes.
 
 The local worker artifact is stored under a generated UUID, not the client filename, with owner-only permissions. It is retained for at most 24 hours. Every job create, status lookup, and worker artifact read performs retention cleanup; expired artifacts and completed reports are deleted at expiry, leaving only non-sensitive `expired` job metadata.
 
@@ -121,7 +135,32 @@ Every documented client or routing error uses the same envelope:
 }
 ```
 
-Error codes include `empty_upload` (400), `upload_too_large` (413), `unsupported_media_type` or `media_type_mismatch` (415), and `invalid_image`, `image_too_large`, `animated_image_not_supported`, or `request_validation_failed` (422). These errors establish file eligibility only; no authenticity claim is made at intake.
+Error codes include `empty_upload` (400), `upload_too_large` or `request_too_large` (413), `unsupported_media_type` or `media_type_mismatch` (415), and `invalid_image`, `image_too_large`, `animated_image_not_supported`, or `request_validation_failed` (422). These errors establish file eligibility only; no authenticity claim is made at intake.
+
+## HTTP operational boundary
+
+The API adds `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`,
+`X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, and a restrictive
+camera/geolocation/microphone `Permissions-Policy` to every HTTP response. It
+also adds a server-generated UUID in `X-Request-ID`; supplied request-ID and
+forwarded-client headers are not trusted.
+
+`POST /v1/jobs` is limited by default to 30 attempts per 60 seconds for each
+direct TCP peer. A rejected request uses `429 rate_limited`, includes a
+`Retry-After` value in seconds, and uses the normal error envelope. This is a
+thread-safe, in-process fixed-window guard for the local single-process v1
+service, not a distributed quota. Set positive integer
+`VERITAS_FACE_UPLOAD_RATE_LIMIT` and
+`VERITAS_FACE_UPLOAD_RATE_WINDOW_SECONDS` values to adjust it. A deployment
+with multiple API processes must enforce the equivalent shared limit at a
+trusted edge; this service deliberately does not treat `X-Forwarded-For` as a
+client identity.
+
+Each completed HTTP request emits one JSON log record with only the generated
+request ID, method, route template, status code, and duration. Background-job
+failures emit the generated job ID and a generic event only. Logs do not carry
+upload bytes, client filenames, image metadata, request headers, client IP
+addresses, artifact paths, or detector inputs.
 
 ## Report invariants
 

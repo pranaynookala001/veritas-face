@@ -1,9 +1,12 @@
+import asyncio
 import io
+import json
 import stat
 import sys
 import tempfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 from uuid import UUID
@@ -17,7 +20,8 @@ from app.baseline_detector import BaselineDetectorResult, BaselineDetectorStatus
 from app.calibration import calibration_registry_from_mapping
 from app.domain import JobStatus, Report, Verdict
 from app.face_quality import FaceAssessment, FaceQualityMetrics, FaceRectangle
-from app.intake import MAX_UPLOAD_BYTES
+from app.hardening import FixedWindowRateLimiter, PublicApiHardeningMiddleware
+from app.intake import MAX_UPLOAD_BYTES, MAX_UPLOAD_REQUEST_BYTES
 from app.main import APP_VERSION, app, configured_job_store, get_job_store, process_local_job
 from app.storage import JobExpiredError, JobStateError, StoredArtifact, TemporaryJobStore
 
@@ -66,10 +70,16 @@ class ApiTests(unittest.TestCase):
         self.temporary_directory = tempfile.TemporaryDirectory()
         self.store = TemporaryJobStore(timedelta(hours=24), directory=Path(self.temporary_directory.name))
         app.dependency_overrides[get_job_store] = lambda: self.store
+        self.original_rate_limiter = app.state.upload_rate_limiter
+        self.original_max_upload_request_bytes = app.state.max_upload_request_bytes
+        app.state.upload_rate_limiter = FixedWindowRateLimiter(limit=30, window_seconds=60)
+        app.state.max_upload_request_bytes = MAX_UPLOAD_REQUEST_BYTES
         self.client = TestClient(app)
 
     def tearDown(self) -> None:
         app.dependency_overrides.clear()
+        app.state.upload_rate_limiter = self.original_rate_limiter
+        app.state.max_upload_request_bytes = self.original_max_upload_request_bytes
         self.store.close()
         self.temporary_directory.cleanup()
 
@@ -82,13 +92,69 @@ class ApiTests(unittest.TestCase):
         return payload
 
     def test_health_reports_service_and_version(self) -> None:
-        response = self.client.get("/health")
+        with self.assertLogs("veritas_face.api", level="INFO") as logged:
+            response = self.client.get("/health")
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(
             response.json(),
             {"status": "ok", "service": "veritas-face-api", "version": APP_VERSION},
         )
+        self.assertEqual(response.headers["cache-control"], "no-store")
+        self.assertEqual(response.headers["permissions-policy"], "camera=(), geolocation=(), microphone=()")
+        self.assertEqual(response.headers["referrer-policy"], "no-referrer")
+        self.assertEqual(response.headers["x-content-type-options"], "nosniff")
+        self.assertEqual(response.headers["x-frame-options"], "DENY")
+        request_id = response.headers["x-request-id"]
+        UUID(request_id)
+        access_log = json.loads(logged.records[-1].getMessage())
+        self.assertEqual(access_log["event"], "http_request_completed")
+        self.assertEqual(access_log["request_id"], request_id)
+        self.assertEqual(access_log["method"], "GET")
+        self.assertEqual(access_log["route"], "/health")
+        self.assertEqual(access_log["status_code"], 200)
+        self.assertIsInstance(access_log["duration_ms"], float)
+
+    def test_readiness_requires_a_usable_private_artifact_store(self) -> None:
+        ready = self.client.get("/ready")
+        ready_alias = self.client.get("/readyz")
+
+        self.assertEqual(ready.status_code, 200)
+        self.assertEqual(ready.json(), {"status": "ok", "service": "veritas-face-api", "version": APP_VERSION})
+        self.assertEqual(ready_alias.json(), ready.json())
+
+        with patch.object(self.store, "readiness_error", return_value="artifact_directory_unavailable"):
+            unavailable = self.client.get("/ready")
+
+        self.assert_error(unavailable, 503, "service_not_ready")
+        self.assertEqual(unavailable.headers["cache-control"], "no-store")
+
+    def test_upload_rate_limit_returns_a_retryable_error_envelope(self) -> None:
+        app.state.upload_rate_limiter = FixedWindowRateLimiter(limit=1, window_seconds=60)
+
+        accepted = self.client.post(
+            "/v1/jobs",
+            files={"portrait": ("portrait.png", image_bytes(), "image/png")},
+        )
+        limited = self.client.post(
+            "/v1/jobs",
+            files={"portrait": ("portrait.png", image_bytes(), "image/png")},
+        )
+
+        self.assertEqual(accepted.status_code, 202)
+        self.assert_error(limited, 429, "rate_limited")
+        self.assertEqual(limited.headers["retry-after"], "60")
+        self.assertEqual(limited.headers["x-content-type-options"], "nosniff")
+
+    def test_request_size_guard_rejects_a_body_before_multipart_parsing(self) -> None:
+        oversized_request = self.client.post(
+            "/v1/jobs",
+            content=b"x" * (MAX_UPLOAD_REQUEST_BYTES + 1),
+            headers={"content-type": "application/octet-stream"},
+        )
+
+        self.assert_error(oversized_request, 413, "request_too_large")
+        self.assertEqual(oversized_request.headers["cache-control"], "no-store")
 
     def test_configured_artifact_directory_uses_the_private_operator_mount(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -318,6 +384,72 @@ class ApiTests(unittest.TestCase):
         response = self.client.get("/unknown")
 
         self.assert_error(response, 404, "not_found")
+
+
+class HardeningMiddlewareTests(unittest.TestCase):
+    def test_chunked_request_over_the_limit_is_rejected_with_the_standard_envelope(self) -> None:
+        sent_messages = []
+        request_messages = iter(
+            [
+                {"type": "http.request", "body": b"a" * MAX_UPLOAD_REQUEST_BYTES, "more_body": True},
+                {"type": "http.request", "body": b"b", "more_body": False},
+            ]
+        )
+
+        async def receive():
+            return next(request_messages)
+
+        async def send(message):
+            sent_messages.append(message)
+
+        async def downstream(_scope, receive_from_client, _send):
+            while True:
+                message = await receive_from_client()
+                if not message.get("more_body", False):
+                    return
+
+        async def exercise() -> None:
+            application = SimpleNamespace(
+                state=SimpleNamespace(
+                    max_upload_request_bytes=MAX_UPLOAD_REQUEST_BYTES,
+                    upload_rate_limiter=FixedWindowRateLimiter(limit=1, window_seconds=60),
+                )
+            )
+            scope = {
+                "type": "http",
+                "method": "POST",
+                "path": "/v1/jobs",
+                "headers": [],
+                "client": ("127.0.0.1", 12345),
+                "app": application,
+            }
+            await PublicApiHardeningMiddleware(downstream)(scope, receive, send)
+
+        asyncio.run(exercise())
+
+        self.assertEqual(sent_messages[0]["status"], 413)
+        headers = dict(sent_messages[0]["headers"])
+        self.assertEqual(headers[b"cache-control"], b"no-store")
+        self.assertEqual(headers[b"x-content-type-options"], b"nosniff")
+        self.assertEqual(json.loads(sent_messages[1]["body"]), {
+            "error": {
+                "code": "request_too_large",
+                "message": "Upload request exceeds the supported size limit.",
+                "issues": [],
+            }
+        })
+
+    def test_fixed_window_limiter_resets_after_its_window(self) -> None:
+        now = [100.0]
+        limiter = FixedWindowRateLimiter(limit=1, window_seconds=60, clock=lambda: now[0])
+
+        self.assertTrue(limiter.allow("direct-client").allowed)
+        denied = limiter.allow("direct-client")
+        self.assertFalse(denied.allowed)
+        self.assertEqual(denied.retry_after_seconds, 60)
+
+        now[0] = 160.0
+        self.assertTrue(limiter.allow("direct-client").allowed)
 
 
 class TemporaryJobStoreTests(unittest.TestCase):

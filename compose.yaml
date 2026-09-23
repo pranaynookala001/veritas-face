@@ -26,6 +26,8 @@ services:
       VERITAS_FACE_WEB_ORIGINS: ${VERITAS_FACE_WEB_ORIGINS:-http://localhost:3000}
       VERITAS_FACE_INFERENCE_URL: http://inference:8080
       VERITAS_FACE_CALIBRATION_PATH: ${VERITAS_FACE_CALIBRATION_PATH:-}
+      VERITAS_FACE_UPLOAD_RATE_LIMIT: ${VERITAS_FACE_UPLOAD_RATE_LIMIT:-30}
+      VERITAS_FACE_UPLOAD_RATE_WINDOW_SECONDS: ${VERITAS_FACE_UPLOAD_RATE_WINDOW_SECONDS:-60}
       DATABASE_URL: postgresql://veritas:${VERITAS_POSTGRES_PASSWORD:-veritas-local-development-only}@postgres:5432/veritas
       REDIS_URL: redis://redis:6379/0
       S3_ENDPOINT_URL: http://object-storage:9000
@@ -48,7 +50,7 @@ services:
         - CMD
         - python
         - -c
-        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=2)"
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/readyz', timeout=2)"
       interval: 5s
       timeout: 3s
       retries: 12
