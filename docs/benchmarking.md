@@ -105,4 +105,4 @@ camera, demographic group, pose, transform severity, or deployment setting.
 Do not use its held-out test records to fit calibration curves, choose a
 threshold, tune the model, or iterate prompt/source selection. Review the
 private results, data coverage, failure modes, and latency measurements before
-the separate publication and baseline-comparison milestone.
+the separate [publication and baseline-comparison workflow](evaluation-publication.md).

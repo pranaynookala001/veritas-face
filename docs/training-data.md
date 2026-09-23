@@ -95,3 +95,10 @@ After release export, evaluate the untouched `test` records with the private
 fixed JPEG, resize, crop, filter, blur, occlusion, and annotated-profile-pose
 matrix through the exact release pipeline. It writes only private aggregate
 results and cannot calibrate a detector or select a product threshold.
+
+After both a candidate and independent baseline have completed comparable
+private runs, use the [aggregate evaluation publication gate](evaluation-publication.md).
+It requires an exact candidate calibration artifact and an aggregate
+record-level error review before it can create Markdown and SVG publication
+artifacts. No public metric should be added until those artifacts have passed
+privacy, licensing, and claim-scope review.
