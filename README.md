@@ -1,76 +1,134 @@
 # Veritas Face
 
-**Synthetic Portrait Authenticity Analyzer** — an evidence-first system for assessing whether a still portrait is likely camera-origin or fully AI-generated.
+**Synthetic Portrait Authenticity Analyzer** — an evidence-first local system
+for assessing whether a still portrait resembles a camera-origin or fully
+AI-generated image.
 
-> This project reports risk and evidence, not certainty. Only validated content provenance can verify origin; model scores are probabilistic.
+> Veritas Face reports probabilistic evidence, not proof. Only validated content
+> provenance can verify a declared origin.
 
-## What it will do
+![The local upload experience, before a file is selected.](docs/assets/local-upload.png)
 
-1. Accept a JPEG, PNG, or WebP portrait.
-2. Detect and quality-check one dominant face.
-3. Inspect image metadata and C2PA/Content Credentials.
-4. Run a fine-tuned portrait classifier and an independent baseline detector.
-5. Calibrate the scores into `likely_synthetic`, `likely_authentic`, or `inconclusive`.
-6. Return an explainable report with evidence, quality warnings, and model versions.
+## What is available today
+
+The repository provides a complete, tested local evidence-report workflow:
+
+1. The browser accepts one JPEG, PNG, or WebP image up to 10 MiB.
+2. The API independently validates and temporarily stores it under a generated
+   ID, then selects and quality-checks one dominant face.
+3. It records safe metadata-presence facts and verifies embedded C2PA/Content
+   Credentials without remote manifest retrieval.
+4. An explicitly configured CPU ONNX service may add detector evidence. An
+   exact-release, held-out calibration artifact is required before a detector
+   score can affect a verdict.
+5. The browser receives a versioned evidence report with a
+   `likely_synthetic`, `likely_authentic`, or `inconclusive` assessment.
+
+The default checkout has no model weights or calibration artifact, so it
+deliberately produces an `inconclusive` report rather than presenting an
+unvalidated score as an authenticity claim. There is not yet a public hosted
+demo; deployment needs an approved hosting account and an audited private
+release bundle. See [TODO.md](TODO.md) for the remaining delivery work.
+
+## Demo
+
+The committed screenshots use no portrait data. The report below comes from a
+locally generated non-portrait PNG and demonstrates the intended fail-safe
+behavior: no detected face means no detector score and an `inconclusive`
+assessment.
+
+![A completed local report showing an inconclusive result because no face was detected.](docs/assets/local-inconclusive-report.png)
+
+Read [the demo notes](docs/demo.md) for the capture conditions and how to
+reproduce this path. Do not use a report for identity verification, moderation,
+employment, lending, law enforcement, or another consequential decision.
 
 ## Architecture
 
-```text
-Next.js web app
-       |
-       v
-FastAPI job API + worker  --->  provenance / metadata inspection
-       |                                   |
-       v                                   v
-C++ ONNX Runtime service  <---  aligned primary-face crop
-       |
-       v
-calibration + evidence report
+```mermaid
+flowchart LR
+    U[Person's browser] --> W[Next.js upload and report UI]
+    W -->|multipart portrait| A[FastAPI job API and local worker]
+    A --> T[(Owner-only temporary artifact<br/>maximum 24-hour retention)]
+    A --> Q[Primary-face selection<br/>and quality gates]
+    A --> P[Offline metadata and C2PA<br/>Content Credentials inspection]
+    Q --> D[Optional local CPU ONNX detector]
+    D --> C[Exact-release held-out calibration]
+    P --> R[Versioned evidence report]
+    C --> R
+    Q --> R
+    R --> W
 ```
 
-The browser never receives an authenticity claim without its supporting evidence. Original uploads and derived crops are temporary and are deleted after processing.
+The browser never receives uploaded bytes, client filenames, embedded metadata
+values, C2PA manifest contents, signer identities, or facial embeddings. The
+local object-store, Redis, Postgres, and inference containers are internal to
+the Compose network. For boundaries, data flow, and the intentionally safe
+model-unavailable state, see [the architecture guide](docs/architecture.md).
 
-## Repository layout
+## Run locally
 
-- `apps/web` — public Next.js upload and report experience.
-- `services/api` — Python domain model, validation, job orchestration, and report assembly.
-- `services/inference` — C++/CMake ONNX Runtime inference service.
-- `training` — reproducible Kaggle fine-tuning and evaluation assets.
-- `docs` — API, architecture, benchmark, privacy, and operational documentation.
+The fastest route is Docker Compose:
 
-## Development status
+```sh
+cp .env.example .env
+docker compose up --build
+```
 
-See [TODO.md](TODO.md) for the ordered implementation backlog. The first milestone establishes shared contracts and automated quality gates; later milestones add actual upload, inference, and deployment behavior.
+Open <http://localhost:3000>; API readiness is at
+<http://localhost:8000/readyz>. Tear down local containers and volumes when
+finished:
 
-## Current local workflow
+```sh
+docker compose down -v
+```
 
-The local web experience lets a person select one JPEG, PNG, or WebP portrait up to 10 MiB, submit it to the API, and view a completed evidence report. The API independently validates multipart `portrait` content, bounds each request to the file limit plus 64 KiB of multipart framing, and limits a direct client to 30 upload attempts per 60 seconds by default. It stores accepted bytes privately for at most 24 hours, then runs local face-quality gates and offline provenance checks in the background. `GET /v1/jobs/{job_id}` exposes a report only after processing completes; it contains safe decoded-image facts (format, dimensions, and EXIF/XMP presence), a normalized C2PA/Content Credentials verification result, quality findings, and—when explicitly configured—a validated baseline-detector probability with its latency and model version. Responses use no-store and defensive browser headers, include a generated request ID, and create privacy-safe structured access logs. The API never exposes image bytes, embedded metadata values, manifest contents, signer identities, a client filename, or a facial embedding. Remote C2PA manifest retrieval is disabled for uploads. Set `VERITAS_FACE_INFERENCE_URL=http://127.0.0.1:8080` to send quality-passing primary-face crops to the local C++ service. A detector score can affect a verdict only when `VERITAS_FACE_CALIBRATION_PATH` names a versioned held-out calibration artifact for that exact detector release; otherwise the report stays `inconclusive`. The policy is probabilistic, treats meaningful disagreement between independent detector families as `inconclusive`, and never treats missing, invalid, or unavailable provenance or metadata as evidence of authenticity or synthetic origin. See [the API contract](docs/api-contract.md) and [face-quality policy](docs/face-quality.md).
+Docker Compose is for local development, not a public deployment. The full
+setup guide includes a no-Docker web/API workflow, configuration boundaries,
+and troubleshooting: [docs/setup.md](docs/setup.md).
 
-The C++ inference service provides local liveness (`/health`, `/healthz`), model-readiness (`/v1/model-info`), and CPU ONNX inference (`POST /v1/infer`) for an explicitly configured model. It accepts a fixed primary-face crop, converts RGB/HWC uint8 bytes to normalized float32 NCHW input, and reports the model score as probabilistic detector evidence. A process without `--model` remains deliberately `unavailable`; a healthy process is not an authenticity result. Its HTTP contract and local launch options are documented in [the API contract](docs/api-contract.md#c-inference-service).
+## Verify a checkout
 
-## Local Docker stack
+Install the documented local prerequisites (Node.js 20+, Python 3.11+, and
+CMake 3.25+), install dependencies, then run the root quality gate:
 
-Docker Compose starts the web app, API/background worker, CPU inference service,
-Redis, Postgres, and an internal temporary object-store service. The current
-v1 worker and temporary artifact store remain single-process by design; Redis,
-Postgres, and MinIO are local infrastructure for the upcoming hardening work,
-not a claim of durable distributed processing. See the [Compose guide](docs/docker-compose.md)
-for launch, private model/calibration mounts, temporary-data cleanup, and the
-safe model-unavailable default.
+```sh
+python3 -m pip install -e "services/api[test]"
+python3 -m pip install -r services/inference/test-requirements.txt
+npm ci
+npm run check
+```
 
-## Training-data governance
+The root gate validates JavaScript manifests and Compose, runs API, training,
+and C++ inference-contract tests, then tests, lints, and builds the web app.
 
-The repository contains a reviewed, licence-aware source catalog and a generator-family-disjoint split plan, not portrait data or model weights. Camera-origin records require per-file licence and attribution verification; fully synthetic records must be text-to-image-only and retain a pinned generator revision plus a private output hash. Raw images, face crops, prompts, seeds, materialized manifests, and checkpoints stay out of Git. See [training-data governance](docs/training-data.md) and [the manifest guide](training/manifests/README.md).
+## Project map
 
-The first training path is an unexecuted, reproducible [free-Kaggle MobileNetV3-Small fine-tuning notebook](training/fine_tune_mobilenetv3_kaggle.ipynb). It validates a private, digest-pinned record manifest and every referenced image before training, captures deterministic run metadata, and leaves the held-out test split untouched. The private [model-release procedure](docs/model-release.md) exports a selected checkpoint to a strictly contracted ONNX bundle with an explicit operator-supplied licence, model card, calibration linkage, verdict-policy configuration, and checksums. The private [benchmark runner](docs/benchmarking.md) measures fixed held-out robustness conditions without selecting a threshold or making a checked-in performance claim. When a candidate and independent baseline have both completed comparable private held-out runs, the [aggregate evaluation publication workflow](docs/evaluation-publication.md) can produce a checksum-bound Markdown/SVG review bundle; there are still no checked-in model-performance claims or private evaluation artifacts.
+- `apps/web` — accessible Next.js upload and evidence-report experience.
+- `services/api` — validated intake, temporary job orchestration, provenance,
+  quality gates, calibration, and report assembly.
+- `services/inference` — C++/CMake CPU ONNX Runtime service.
+- `training` — reproducible fine-tuning, release, benchmarking, and aggregate
+  evaluation tooling; it contains no portraits, weights, or private results.
+- `docs` — system contracts, operations, privacy boundaries, and limitations.
 
-## Local prerequisites
+## Evidence and safety boundaries
 
-- Node.js 20+
-- Python 3.11+
-- CMake 3.25+
-- Docker Desktop (for the complete local stack)
+- V1 is limited to still images with one dominant human face and the narrow
+  question of fully synthetic portrait resemblance.
+- It does not claim to detect face swaps, identity deepfakes, or every AI edit.
+- Low-quality images, multiple ambiguous faces, no face, unsupported media,
+  detector failure, calibration mismatch, and meaningful detector disagreement
+  return `inconclusive`.
+- Metadata or Content Credentials that are absent, invalid, or unavailable are
+  never evidence that a portrait is authentic or synthetic.
+- Upload artifacts are private, use generated IDs instead of filenames, and are
+  deleted with their reports at expiry. The default maximum retention is 24
+  hours.
 
-## Safety and scope
-
-V1 only evaluates still images with one dominant human face. It does **not** claim to detect face swaps, identity deepfakes, or every kind of AI edit. Read [the project guardrails](docs/guardrails.md) before using the result for any consequential decision.
+Read the [guardrails](docs/guardrails.md), [face-quality policy](docs/face-quality.md),
+and [API contract](docs/api-contract.md) before using the system. Training data
+governance, model-release controls, and held-out evaluation publication are
+documented in [docs/training-data.md](docs/training-data.md),
+[docs/model-release.md](docs/model-release.md), and
+[docs/evaluation-publication.md](docs/evaluation-publication.md).

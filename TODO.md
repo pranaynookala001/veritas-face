@@ -35,4 +35,5 @@
 - [x] Add Docker Compose for web, API/worker, inference, Redis, Postgres, and temporary object storage. Verified with API storage-mount tests, Compose manifest parsing, and the root quality gate.
 - [x] Add rate/size limits, security headers, structured logs, health/readiness checks, and end-to-end tests. Verified with 53 API tests, Compose manifest parsing, and the root quality gate.
 - [ ] Deploy the public CPU demo within free-tier limits; document cold-start and quota behavior.
-- [ ] Complete the portfolio README, architecture diagram, setup guide, demo screenshots/video, and pull request to `main`.
+- [x] Complete the portfolio README, architecture diagram, setup guide, and non-identifying local demo screenshots. Verified with the root quality gate and a local browser capture of the safe default `inconclusive` path; no portrait input was committed.
+- [ ] Record a public-demo walkthrough and open a reviewed pull request to `main` after the public CPU deployment and audited release bundle are available.

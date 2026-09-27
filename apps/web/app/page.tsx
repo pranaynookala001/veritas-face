@@ -3,8 +3,8 @@ import { UploadForm } from "./upload-form";
 const evidenceSteps = [
   "Face quality and primary-face selection",
   "C2PA / Content Credentials and metadata inspection",
-  "Fine-tuned ONNX model and independent baseline",
-  "Calibrated verdict with explicit uncertainty",
+  "Optional CPU ONNX detector evidence",
+  "Exact-release calibration and explicit uncertainty",
 ];
 
 export default function HomePage() {
